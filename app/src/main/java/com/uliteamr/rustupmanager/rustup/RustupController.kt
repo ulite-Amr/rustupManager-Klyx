@@ -1,15 +1,12 @@
 package com.uliteamr.rustupmanager.rustup
 
-import com.klyx.api.system.CommandResult
 import com.klyx.api.system.ProcessEvent
 import com.klyx.api.system.command
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 
 private const val RUSTUP = "/root/.cargo/bin/rustup"
 private const val BASH = "/bin/bash"
 private const val RUSTUP_INIT_URL = "https://sh.rustup.rs"
-
-private val KNOWN_COMPONENTS = listOf("rust-analyzer", "clippy", "rustfmt", "rust-src")
 
 class RustupController {
 
@@ -19,11 +16,14 @@ class RustupController {
         false
     }
 
-    suspend fun bootstrapInstall(): Flow<ProcessEvent> {
+    suspend fun bootstrapInstall(onLine: (String) -> Unit): Boolean {
         val script = "curl --proto '=https' --tlsv1.2 -sSf $RUSTUP_INIT_URL | " +
             "sh -s -- -y --default-toolchain stable --profile default"
-        return command(BASH, "-lc", script).stream()
+        return runStreaming(BASH, arrayOf("-lc", script), onLine)
     }
+
+    suspend fun resetInstall(onLine: (String) -> Unit): Boolean =
+        runStreaming(BASH, arrayOf("-lc", "rm -rf /root/.rustup /root/.cargo"), onLine)
 
     suspend fun listToolchains(): List<Toolchain> {
         val result = command(RUSTUP, "toolchain", "list").output()
@@ -31,22 +31,21 @@ class RustupController {
         return result.stdoutLines
             .filter { it.isNotBlank() && !it.contains("no installed toolchains") }
             .map { line ->
-                val isDefault = line.contains("(default)")
                 Toolchain(
                     name = line.substringBefore("(default)").trim(),
-                    isDefault = isDefault,
+                    isDefault = line.contains("(default)"),
                 )
             }
     }
 
-    suspend fun installToolchain(name: String): CommandResult =
-        command(RUSTUP, "toolchain", "install", name).output()
+    suspend fun installToolchain(name: String, onLine: (String) -> Unit): Boolean =
+        runRustup("toolchain", "install", name, onLine = onLine)
 
-    suspend fun uninstallToolchain(name: String): CommandResult =
-        command(RUSTUP, "toolchain", "uninstall", name).output()
+    suspend fun uninstallToolchain(name: String, onLine: (String) -> Unit): Boolean =
+        runRustup("toolchain", "uninstall", name, onLine = onLine)
 
-    suspend fun setDefaultToolchain(name: String): CommandResult =
-        command(RUSTUP, "default", name).output()
+    suspend fun setDefaultToolchain(name: String, onLine: (String) -> Unit): Boolean =
+        runRustup("default", name, onLine = onLine)
 
     suspend fun componentState(): ComponentState {
         val result = command(RUSTUP, "component", "list", "--installed").output()
@@ -60,11 +59,11 @@ class RustupController {
         )
     }
 
-    suspend fun addComponent(component: String): CommandResult =
-        command(RUSTUP, "component", "add", component).output()
+    suspend fun addComponent(component: String, onLine: (String) -> Unit): Boolean =
+        runRustup("component", "add", component, onLine = onLine)
 
-    suspend fun removeComponent(component: String): CommandResult =
-        command(RUSTUP, "component", "remove", component).output()
+    suspend fun removeComponent(component: String, onLine: (String) -> Unit): Boolean =
+        runRustup("component", "remove", component, onLine = onLine)
 
     suspend fun activeTargets(): List<String> {
         val result = command(RUSTUP, "target", "list", "--installed").output()
@@ -72,14 +71,14 @@ class RustupController {
         return result.stdoutLines.filter { it.isNotBlank() }
     }
 
-    suspend fun addTarget(target: String): CommandResult =
-        command(RUSTUP, "target", "add", target).output()
+    suspend fun addTarget(target: String, onLine: (String) -> Unit): Boolean =
+        runRustup("target", "add", target, onLine = onLine)
 
-    suspend fun removeTarget(target: String): CommandResult =
-        command(RUSTUP, "target", "remove", target).output()
+    suspend fun removeTarget(target: String, onLine: (String) -> Unit): Boolean =
+        runRustup("target", "remove", target, onLine = onLine)
 
-    suspend fun updateAll(): CommandResult =
-        command(RUSTUP, "update").output()
+    suspend fun updateAll(onLine: (String) -> Unit): Boolean =
+        runRustup("update", onLine = onLine)
 
     suspend fun rustAnalyzerPath(): String? {
         val result = command(RUSTUP, "which", "rust-analyzer").output()
@@ -100,7 +99,25 @@ class RustupController {
         }
     }
 
-    companion object {
-        val availableComponents: List<String> get() = KNOWN_COMPONENTS
+    private suspend fun runRustup(vararg args: String, onLine: (String) -> Unit): Boolean =
+        runStreaming(RUSTUP, arrayOf(*args), onLine)
+
+    private suspend fun runStreaming(program: String, args: Array<String>, onLine: (String) -> Unit): Boolean {
+        var success = false
+        command(program, *args).stream().collect { event ->
+            when (event) {
+                is ProcessEvent.Stdout -> emitLines(event.text, onLine)
+                is ProcessEvent.Stderr -> emitLines(event.text, onLine)
+                is ProcessEvent.ExitCode -> success = event.code == 0
+            }
+        }
+        return success
+    }
+
+    private fun emitLines(chunk: String, onLine: (String) -> Unit) {
+        chunk.split('\n').forEach { line ->
+            val trimmed = line.trimEnd('\r')
+            if (trimmed.isNotEmpty()) onLine(trimmed)
+        }
     }
 }

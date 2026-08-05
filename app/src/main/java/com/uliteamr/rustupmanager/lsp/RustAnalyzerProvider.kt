@@ -6,11 +6,13 @@ import com.klyx.lsp.server.LanguageClient
 import com.klyx.lsp.server.LanguageServer
 import com.klyx.lsp.server.createLanguageServer
 import com.uliteamr.rustupmanager.rustup.RustupController
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.io.asSink
 import kotlinx.io.asSource
 
 class RustAnalyzerProvider(
     private val rustup: RustupController,
+    private val scope: CoroutineScope,
 ) : LanguageServerProvider {
 
     override suspend fun startServer(client: LanguageClient): LanguageServer {
@@ -18,6 +20,8 @@ class RustAnalyzerProvider(
             ?: error("rust-analyzer is not installed. Add the component from the dashboard first.")
 
         val handle = command(binary).spawn()
+        RustAnalyzerSession.attach(handle, scope)
+
         return createLanguageServer(
             client = client,
             out = handle.stdout.asSource(),

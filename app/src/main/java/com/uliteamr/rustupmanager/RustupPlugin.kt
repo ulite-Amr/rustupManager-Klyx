@@ -24,10 +24,12 @@ import com.uliteamr.rustupmanager.lsp.RustAnalyzerProvider
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.settings.RustupSettingsContent
 import com.uliteamr.rustupmanager.ui.DashboardScreen
+import com.uliteamr.rustupmanager.ui.LspScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val DASHBOARD_SCREEN = ScreenId("com.uliteamr.rustupmanager.dashboard")
+private val LSP_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp")
 private const val TOOLBAR_ACTION_ID = "com.uliteamr.rustupmanager.open"
 private const val LSP_PATTERN = "rs"
 private const val UPDATE_CHECK_LOOP_DELAY_HOURS = 6L
@@ -57,8 +59,13 @@ class RustupPlugin : KlyxPlugin {
         screens[DASHBOARD_SCREEN] = {
             DashboardScreen(
                 rustup = rustup,
+                onOpenLsp = { navigator.navigateTo(NavDestination.Custom(LSP_SCREEN)) },
                 onBack = { navigator.navigateBack() },
             )
+        }
+
+        screens[LSP_SCREEN] = {
+            LspScreen(onBack = { navigator.navigateBack() })
         }
 
         toolbar.register(
@@ -72,7 +79,7 @@ class RustupPlugin : KlyxPlugin {
             ),
         )
 
-        lspRegistration = languageServers.register(LSP_PATTERN, RustAnalyzerProvider(rustup))
+        lspRegistration = languageServers.register(LSP_PATTERN, RustAnalyzerProvider(rustup, pluginScope))
 
         settingsRegistration = settingsRegistry.register { RustupSettingsContent() }
     }
@@ -87,6 +94,7 @@ class RustupPlugin : KlyxPlugin {
 
     override suspend fun onUnload() {
         screens.unregister(DASHBOARD_SCREEN)
+        screens.unregister(LSP_SCREEN)
         toolbar.unregister(TOOLBAR_ACTION_ID)
         lspRegistration?.unregister()
         settingsRegistration?.unregister()
@@ -108,7 +116,7 @@ class RustupPlugin : KlyxPlugin {
         val now = System.currentTimeMillis()
         if (now - last < intervalMs) return
 
-        rustup.updateAll()
+        rustup.updateAll(onLine = {})
         settings.putLong("lastUpdateCheck", now)
     }
 }
