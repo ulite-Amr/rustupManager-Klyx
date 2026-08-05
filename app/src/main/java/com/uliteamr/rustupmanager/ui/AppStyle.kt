@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -69,7 +70,7 @@ fun SectionLabel(text: String) {
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 20.dp, top = 12.dp, bottom = 6.dp),
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 6.dp),
     )
 }
 
@@ -122,7 +123,7 @@ fun SettingsCard(
             }
             if (content != null) {
                 if (title != null || icon != null || trailing != null) {
-                    Spacer(Modifier.padding(top = 8.dp))
+                    Spacer(Modifier.height(8.dp))
                 }
                 content()
             }

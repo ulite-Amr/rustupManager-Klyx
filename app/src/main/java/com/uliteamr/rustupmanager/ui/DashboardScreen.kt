@@ -145,7 +145,7 @@ private fun NotInstalledBody(
                 + "first \u2014 a stale settings file is a common cause of install failures.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 20.dp, top = 6.dp, bottom = 4.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 4.dp),
         )
         SectionLabel("Log")
         LogPanel(lines = logLines, modifier = Modifier.padding(horizontal = 16.dp), minHeight = 160.dp)
