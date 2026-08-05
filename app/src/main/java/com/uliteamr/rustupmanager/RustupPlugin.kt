@@ -19,8 +19,7 @@ import com.klyx.api.ui.ToolbarAction
 import com.klyx.api.ui.ToolbarCategory
 import com.klyx.api.ui.ToolbarIcon
 import com.klyx.api.ui.ToolbarRegistry
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
+import com.uliteamr.rustupmanager.icons.Wrench
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerProvider
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.settings.RustupSettingsContent
@@ -66,7 +65,7 @@ class RustupPlugin : KlyxPlugin {
             ToolbarAction(
                 id = TOOLBAR_ACTION_ID,
                 label = "Rust Toolchain",
-                icon = ToolbarIcon(Icons.Filled.Build),
+                icon = ToolbarIcon(Wrench),
                 category = ToolbarCategory("Rust"),
                 priority = 100,
                 onClick = { navigator.navigateTo(NavDestination.Custom(DASHBOARD_SCREEN)) },
