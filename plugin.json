@@ -1,0 +1,20 @@
+{
+  "id": "com.uliteamr.rustupmanager",
+  "name": "Rustup Manager",
+  "version": "1.0.0",
+  "minAppVersion": "4.2.0",
+  "maxAppVersion": null,
+  "entryClass": "com.uliteamr.rustupmanager.RustupPlugin",
+  "description": "Full Rust toolchain manager built on rustup: install and switch toolchains, manage components and targets, and get rust-analyzer wired up as a language server automatically.",
+  "icon": "icon.png",
+  "author": {
+    "name": "uliteamr"
+  },
+  "license": "MIT",
+  "links": {
+    "source": null,
+    "issues": null,
+    "donate": null
+  },
+  "permissions": []
+}

@@ -1,0 +1,5 @@
+[versions]
+klyx-snapshot = "4.2.0-SNAPSHOT"
+
+[plugins]
+klyx = { id = "io.github.klyx-dev.compiler.plugin", version.ref = "klyx-snapshot" }
