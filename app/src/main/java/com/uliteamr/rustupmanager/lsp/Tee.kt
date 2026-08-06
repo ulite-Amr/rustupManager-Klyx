@@ -3,6 +3,7 @@ package com.uliteamr.rustupmanager.lsp
 import kotlinx.io.Buffer
 import kotlinx.io.RawSink
 import kotlinx.io.RawSource
+import kotlinx.io.readByteArray
 
 private const val PREVIEW_LIMIT = 400
 
