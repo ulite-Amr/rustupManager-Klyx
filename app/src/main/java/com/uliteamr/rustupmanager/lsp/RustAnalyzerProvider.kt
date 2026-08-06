@@ -19,7 +19,9 @@ class RustAnalyzerProvider(
         val binary = rustup.rustAnalyzerPath()
             ?: error("rust-analyzer is not installed. Add the component from the dashboard first.")
 
-        val handle = command(binary).spawn()
+        val handle = command(binary)
+            .env("RA_LOG", "info")
+            .spawn()
         RustAnalyzerSession.attach(handle, scope)
 
         return createLanguageServer(
