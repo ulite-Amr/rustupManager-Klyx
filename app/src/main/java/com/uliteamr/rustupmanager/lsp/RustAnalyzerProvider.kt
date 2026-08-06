@@ -26,13 +26,10 @@ class RustAnalyzerProvider(
                 .spawn()
             RustAnalyzerSession.attach(handle, scope)
 
-            val loggedOut = LoggingRawSource(handle.stdout.asSource(), "S->C") { RustAnalyzerSession.log(it) }
-            val loggedIn = LoggingRawSink(handle.stdin.asSink(), "C->S") { RustAnalyzerSession.log(it) }
-
             return createLanguageServer(
                 client = client,
-                out = loggedOut,
-                `in` = loggedIn,
+                out = handle.stdout.asSource(),
+                `in` = handle.stdin.asSink(),
             )
         } catch (e: Exception) {
             // Klyx's host-side LspManager swallows exceptions from startServer via runCatching,
