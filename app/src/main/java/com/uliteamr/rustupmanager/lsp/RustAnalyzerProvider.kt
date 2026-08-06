@@ -16,8 +16,9 @@ class RustAnalyzerProvider(
 ) : LanguageServerProvider {
 
     override suspend fun startServer(client: LanguageClient): LanguageServer {
-        val binary = rustup.rustAnalyzerPath()
-            ?: error("rust-analyzer is not installed. Add the component from the dashboard first.")
+        val binary = rustup.rustAnalyzerAptPath()
+            ?: rustup.rustAnalyzerPath()
+            ?: error("rust-analyzer is not installed. Install it from the dashboard first (apt or rustup component).")
 
         val handle = command(binary)
             .env("RA_LOG", "info")

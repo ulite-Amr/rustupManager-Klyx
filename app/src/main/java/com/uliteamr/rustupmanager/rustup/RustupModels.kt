@@ -7,6 +7,7 @@ data class Toolchain(
 
 data class ComponentState(
     val rustAnalyzer: Boolean,
+    val rustAnalyzerApt: Boolean,
     val clippy: Boolean,
     val rustfmt: Boolean,
     val rustSrc: Boolean,

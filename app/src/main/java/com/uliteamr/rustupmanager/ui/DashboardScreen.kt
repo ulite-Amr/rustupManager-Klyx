@@ -91,6 +91,8 @@ fun DashboardScreen(
                 onRemoveTarget = { target -> runAction("rustup target remove $target") { onLine -> rustup.removeTarget(target, onLine) } },
                 onAddTarget = { target -> runAction("rustup target add $target") { onLine -> rustup.addTarget(target, onLine) } },
                 onUpdateAll = { runAction("rustup update") { onLine -> rustup.updateAll(onLine) } },
+                onInstallRustAnalyzerApt = { runAction("apt-get install rust-analyzer") { onLine -> rustup.installRustAnalyzerApt(onLine) } },
+                onRemoveRustAnalyzerApt = { runAction("apt-get remove rust-analyzer") { onLine -> rustup.removeRustAnalyzerApt(onLine) } },
             )
         }
     }
@@ -165,6 +167,8 @@ private fun ReadyBody(
     onRemoveTarget: (String) -> Unit,
     onAddTarget: (String) -> Unit,
     onUpdateAll: () -> Unit,
+    onInstallRustAnalyzerApt: () -> Unit,
+    onRemoveRustAnalyzerApt: () -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
@@ -187,11 +191,31 @@ private fun ReadyBody(
         }
         item { InstallToolchainRow(enabled = !busy, onInstall = onInstallToolchain) }
 
-        item { SectionLabel("Components") }
+        item { SectionLabel("Language server") }
+        item {
+            SettingsCard(
+                title = "rust-analyzer (via apt)",
+                description = "Installed through the Linux environment's apt, not rustup \u2014 kept separate so it can be compared against the rustup component.",
+                content = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (state.components.rustAnalyzerApt) {
+                            OutlinedButton(
+                                onClick = onRemoveRustAnalyzerApt,
+                                enabled = !busy,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) { Text("Remove") }
+                        } else {
+                            Button(onClick = onInstallRustAnalyzerApt, enabled = !busy) { Text("Install via apt") }
+                        }
+                    }
+                },
+            )
+        }
+
+        item { SectionLabel("Components (rustup)") }
         item {
             SettingsCard {
                 Column {
-                    ComponentRow("rust-analyzer", state.components.rustAnalyzer, !busy, onToggleComponent)
                     ComponentRow("clippy", state.components.clippy, !busy, onToggleComponent)
                     ComponentRow("rustfmt", state.components.rustfmt, !busy, onToggleComponent)
                     ComponentRow("rust-src", state.components.rustSrc, !busy, onToggleComponent)

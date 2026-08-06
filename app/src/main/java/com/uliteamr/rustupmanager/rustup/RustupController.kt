@@ -53,6 +53,7 @@ class RustupController {
         fun has(component: String) = installed.any { it.startsWith(component) }
         return ComponentState(
             rustAnalyzer = has("rust-analyzer"),
+            rustAnalyzerApt = isRustAnalyzerAptInstalled(),
             clippy = has("clippy"),
             rustfmt = has("rustfmt"),
             rustSrc = has("rust-src"),
@@ -85,6 +86,21 @@ class RustupController {
         if (result.exitCode != 0) return null
         return result.stdoutText.trim().takeIf { it.isNotEmpty() }
     }
+
+    /** Installs rust-analyzer via apt instead of the rustup component. */
+    suspend fun installRustAnalyzerApt(onLine: (String) -> Unit): Boolean =
+        runStreaming(BASH, arrayOf("-lc", "apt-get update && apt-get install -y rust-analyzer"), onLine)
+
+    suspend fun removeRustAnalyzerApt(onLine: (String) -> Unit): Boolean =
+        runStreaming(BASH, arrayOf("-lc", "apt-get remove -y rust-analyzer"), onLine)
+
+    suspend fun rustAnalyzerAptPath(): String? {
+        val result = command(BASH, "-lc", "command -v rust-analyzer").output()
+        if (result.exitCode != 0) return null
+        return result.stdoutText.trim().takeIf { it.isNotEmpty() }
+    }
+
+    suspend fun isRustAnalyzerAptInstalled(): Boolean = rustAnalyzerAptPath() != null
 
     suspend fun loadState(): RustupState {
         if (!isInstalled()) return RustupState.NotInstalled
