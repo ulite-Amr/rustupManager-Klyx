@@ -59,6 +59,10 @@ object RustAnalyzerSession {
         current?.kill()
     }
 
+    fun log(line: String) {
+        appendLog(line)
+    }
+
     fun clearLogs() {
         logs.clear()
     }
