@@ -12,7 +12,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.uliteamr.rustupmanager.icons.Server
+import com.uliteamr.rustupmanager.rustup.LspSource
+import com.uliteamr.rustupmanager.rustup.LspState
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.rustup.RustupState
 import com.uliteamr.rustupmanager.rustup.Toolchain
@@ -82,6 +83,7 @@ fun DashboardScreen(
                 onSetDefault = { name -> runAction("rustup default $name") { onLine -> rustup.setDefaultToolchain(name, onLine) } },
                 onUninstallToolchain = { name -> runAction("rustup toolchain uninstall $name") { onLine -> rustup.uninstallToolchain(name, onLine) } },
                 onInstallToolchain = { name -> runAction("rustup toolchain install $name") { onLine -> rustup.installToolchain(name, onLine) } },
+                onUpdateToolchain = { name -> runAction("rustup update $name") { onLine -> rustup.updateToolchain(name, onLine) } },
                 onToggleComponent = { component, enable ->
                     val label = if (enable) "rustup component add $component" else "rustup component remove $component"
                     runAction(label) { onLine ->
@@ -91,8 +93,18 @@ fun DashboardScreen(
                 onRemoveTarget = { target -> runAction("rustup target remove $target") { onLine -> rustup.removeTarget(target, onLine) } },
                 onAddTarget = { target -> runAction("rustup target add $target") { onLine -> rustup.addTarget(target, onLine) } },
                 onUpdateAll = { runAction("rustup update") { onLine -> rustup.updateAll(onLine) } },
-                onInstallRustAnalyzerApt = { runAction("apt-get install rust-analyzer") { onLine -> rustup.installRustAnalyzerApt(onLine) } },
-                onRemoveRustAnalyzerApt = { runAction("apt-get remove rust-analyzer") { onLine -> rustup.removeRustAnalyzerApt(onLine) } },
+                onInstallLsp = { source ->
+                    val label = if (source == LspSource.Rustup) "rustup component add rust-analyzer" else "apt-get install rust-analyzer"
+                    runAction(label) { onLine ->
+                        if (source == LspSource.Rustup) rustup.installLspViaRustup(onLine) else rustup.installLspViaApt(onLine)
+                    }
+                },
+                onRemoveLsp = { source ->
+                    val label = if (source == LspSource.Rustup) "rustup component remove rust-analyzer" else "apt-get remove rust-analyzer"
+                    runAction(label) { onLine ->
+                        if (source == LspSource.Rustup) rustup.removeLspViaRustup(onLine) else rustup.removeLspViaApt(onLine)
+                    }
+                },
             )
         }
     }
@@ -163,20 +175,26 @@ private fun ReadyBody(
     onSetDefault: (String) -> Unit,
     onUninstallToolchain: (String) -> Unit,
     onInstallToolchain: (String) -> Unit,
+    onUpdateToolchain: (String) -> Unit,
     onToggleComponent: (String, Boolean) -> Unit,
     onRemoveTarget: (String) -> Unit,
     onAddTarget: (String) -> Unit,
     onUpdateAll: () -> Unit,
-    onInstallRustAnalyzerApt: () -> Unit,
-    onRemoveRustAnalyzerApt: () -> Unit,
+    onInstallLsp: (LspSource) -> Unit,
+    onRemoveLsp: (LspSource) -> Unit,
 ) {
+    var lspSource by remember { mutableStateOf(LspSource.Rustup) }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
-            SettingsCard(
-                icon = Server,
-                title = "Language server",
-                description = "Status, live logs, and controls for rust-analyzer",
-                trailing = { TextButton(onClick = onOpenLsp) { Text("Open") } },
+            LspSourceCard(
+                lsp = state.lsp,
+                selected = lspSource,
+                onSelect = { lspSource = it },
+                busy = busy,
+                onInstall = { onInstallLsp(lspSource) },
+                onRemove = { onRemoveLsp(lspSource) },
+                onOpenLogs = onOpenLsp,
             )
         }
 
@@ -187,32 +205,12 @@ private fun ReadyBody(
                 enabled = !busy,
                 onSetDefault = { onSetDefault(toolchain.name) },
                 onUninstall = { onUninstallToolchain(toolchain.name) },
+                onUpdate = { onUpdateToolchain(toolchain.name) },
             )
         }
         item { InstallToolchainRow(enabled = !busy, onInstall = onInstallToolchain) }
 
-        item { SectionLabel("Language server") }
-        item {
-            SettingsCard(
-                title = "rust-analyzer (via apt)",
-                description = "Installed through the Linux environment's apt, not rustup \u2014 kept separate so it can be compared against the rustup component.",
-                content = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (state.components.rustAnalyzerApt) {
-                            OutlinedButton(
-                                onClick = onRemoveRustAnalyzerApt,
-                                enabled = !busy,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            ) { Text("Remove") }
-                        } else {
-                            Button(onClick = onInstallRustAnalyzerApt, enabled = !busy) { Text("Install via apt") }
-                        }
-                    }
-                },
-            )
-        }
-
-        item { SectionLabel("Components (rustup)") }
+        item { SectionLabel("Components") }
         item {
             SettingsCard {
                 Column {
@@ -251,17 +249,77 @@ private fun ReadyBody(
 }
 
 @Composable
+private fun LspSourceCard(
+    lsp: LspState,
+    selected: LspSource,
+    onSelect: (LspSource) -> Unit,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onRemove: () -> Unit,
+    onOpenLogs: () -> Unit,
+) {
+    val installedForSelected = when (selected) {
+        LspSource.Rustup -> lsp.installedViaRustup
+        LspSource.Apt -> lsp.installedViaApt
+    }
+    SettingsCard(
+        icon = Server,
+        title = "Language server",
+        description = statusLine(lsp),
+        trailing = { TextButton(onClick = onOpenLogs) { Text("Logs") } },
+        content = {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton(text = "rustup", selected = selected == LspSource.Rustup, enabled = !busy, onClick = { onSelect(LspSource.Rustup) })
+                    PillButton(text = "apt", selected = selected == LspSource.Apt, enabled = !busy, onClick = { onSelect(LspSource.Apt) })
+                }
+                Row(modifier = Modifier.padding(top = 10.dp)) {
+                    if (installedForSelected) {
+                        OutlinedButton(
+                            onClick = onRemove,
+                            enabled = !busy,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) { Text("Remove (${selected.name.lowercase()})") }
+                    } else {
+                        Button(onClick = onInstall, enabled = !busy) { Text("Install via ${selected.name.lowercase()}") }
+                    }
+                }
+            }
+        },
+    )
+}
+
+private fun statusLine(lsp: LspState): String = when {
+    lsp.installedViaRustup && lsp.installedViaApt -> "Installed via both rustup and apt"
+    lsp.installedViaRustup -> "Installed via rustup component"
+    lsp.installedViaApt -> "Installed via apt"
+    else -> "Not installed yet"
+}
+
+@Composable
 private fun ToolchainRow(
     toolchain: Toolchain,
     enabled: Boolean,
     onSetDefault: () -> Unit,
     onUninstall: () -> Unit,
+    onUpdate: () -> Unit,
 ) {
+    val description = buildString {
+        if (toolchain.isDefault) append("default")
+        if (toolchain.updateAvailable != null) {
+            if (isNotEmpty()) append(" \u00b7 ")
+            append("update available: ").append(toolchain.updateAvailable)
+        }
+    }.ifEmpty { null }
+
     SettingsCard(
         title = toolchain.name,
-        description = if (toolchain.isDefault) "default" else null,
+        description = description,
         content = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (toolchain.updateAvailable != null) {
+                    Button(onClick = onUpdate, enabled = enabled) { Text("Update") }
+                }
                 if (!toolchain.isDefault) {
                     OutlinedButton(onClick = onSetDefault, enabled = enabled) { Text("Set default") }
                 }
@@ -286,11 +344,10 @@ private fun InstallToolchainRow(enabled: Boolean, onInstall: (String) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
+                AppTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("stable, beta, nightly, 1.80.0...") },
-                    singleLine = true,
+                    placeholder = "stable, beta, nightly, 1.80.0...",
                     enabled = enabled,
                     modifier = Modifier.weight(1f),
                 )
@@ -353,11 +410,10 @@ private fun AddTargetRow(enabled: Boolean, onAdd: (String) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
+                AppTextField(
                     value = target,
                     onValueChange = { target = it },
-                    label = { Text("e.g. wasm32-unknown-unknown") },
-                    singleLine = true,
+                    placeholder = "e.g. wasm32-unknown-unknown",
                     enabled = enabled,
                     modifier = Modifier.weight(1f),
                 )

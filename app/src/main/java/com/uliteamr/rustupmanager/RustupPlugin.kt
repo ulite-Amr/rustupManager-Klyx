@@ -79,7 +79,7 @@ class RustupPlugin : KlyxPlugin {
             ),
         )
 
-        lspRegistration = languageServers.register(LSP_PATTERN, RustAnalyzerProvider(rustup, pluginScope))
+        lspRegistration = languageServers.register(LSP_PATTERN, RustAnalyzerProvider(pluginScope))
 
         settingsRegistration = settingsRegistry.register { RustupSettingsContent() }
     }

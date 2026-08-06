@@ -28,14 +28,34 @@ class RustupController {
     suspend fun listToolchains(): List<Toolchain> {
         val result = command(RUSTUP, "toolchain", "list").output()
         if (result.exitCode != 0) return emptyList()
+        val updates = toolchainUpdates()
         return result.stdoutLines
             .filter { it.isNotBlank() && !it.contains("no installed toolchains") }
             .map { line ->
+                val name = line.substringBefore("(default)").trim()
                 Toolchain(
-                    name = line.substringBefore("(default)").trim(),
+                    name = name,
                     isDefault = line.contains("(default)"),
+                    updateAvailable = updates[name],
                 )
             }
+    }
+
+    /** Parses `rustup check` into toolchain name -> "old -> new" version string (absent if up to date). */
+    private suspend fun toolchainUpdates(): Map<String, String> {
+        val result = command(RUSTUP, "check").output()
+        if (result.exitCode != 0 && result.exitCode != 1) return emptyMap()
+        val updates = mutableMapOf<String, String>()
+        for (line in result.stdoutLines) {
+            val marker = " - Update available"
+            val idx = line.indexOf(marker)
+            if (idx <= 0) continue
+            val name = line.substring(0, idx).trim()
+            if (name == "rustup") continue
+            val versions = line.substringAfter(":", "").trim()
+            updates[name] = versions.ifEmpty { "update available" }
+        }
+        return updates
     }
 
     suspend fun installToolchain(name: String, onLine: (String) -> Unit): Boolean =
@@ -47,13 +67,14 @@ class RustupController {
     suspend fun setDefaultToolchain(name: String, onLine: (String) -> Unit): Boolean =
         runRustup("default", name, onLine = onLine)
 
+    suspend fun updateToolchain(name: String, onLine: (String) -> Unit): Boolean =
+        runRustup("update", name, onLine = onLine)
+
     suspend fun componentState(): ComponentState {
         val result = command(RUSTUP, "component", "list", "--installed").output()
         val installed = if (result.exitCode == 0) result.stdoutLines else emptyList()
         fun has(component: String) = installed.any { it.startsWith(component) }
         return ComponentState(
-            rustAnalyzer = has("rust-analyzer"),
-            rustAnalyzerApt = isRustAnalyzerAptInstalled(),
             clippy = has("clippy"),
             rustfmt = has("rustfmt"),
             rustSrc = has("rust-src"),
@@ -81,26 +102,29 @@ class RustupController {
     suspend fun updateAll(onLine: (String) -> Unit): Boolean =
         runRustup("update", onLine = onLine)
 
-    suspend fun rustAnalyzerPath(): String? {
-        val result = command(RUSTUP, "which", "rust-analyzer").output()
-        if (result.exitCode != 0) return null
-        return result.stdoutText.trim().takeIf { it.isNotEmpty() }
+    // --- rust-analyzer: source-independent by design ---
+    // Klyx resolves a bare command name against the rootfs's own PATH (including whatever
+    // rustup adds to .bashrc), so spawning "rust-analyzer" works the same whether it was
+    // installed via `rustup component add` or `apt install`. See RustAnalyzerProvider.
+
+    suspend fun lspState(): LspState {
+        val viaRustup = command(RUSTUP, "component", "list", "--installed").output()
+            .let { it.exitCode == 0 && it.stdoutLines.any { line -> line.startsWith("rust-analyzer") } }
+        val viaApt = command(BASH, "-lc", "dpkg -s rust-analyzer").output().exitCode == 0
+        return LspState(installedViaRustup = viaRustup, installedViaApt = viaApt)
     }
 
-    /** Installs rust-analyzer via apt instead of the rustup component. */
-    suspend fun installRustAnalyzerApt(onLine: (String) -> Unit): Boolean =
+    suspend fun installLspViaRustup(onLine: (String) -> Unit): Boolean =
+        runRustup("component", "add", "rust-analyzer", onLine = onLine)
+
+    suspend fun removeLspViaRustup(onLine: (String) -> Unit): Boolean =
+        runRustup("component", "remove", "rust-analyzer", onLine = onLine)
+
+    suspend fun installLspViaApt(onLine: (String) -> Unit): Boolean =
         runStreaming(BASH, arrayOf("-lc", "apt-get update && apt-get install -y rust-analyzer"), onLine)
 
-    suspend fun removeRustAnalyzerApt(onLine: (String) -> Unit): Boolean =
+    suspend fun removeLspViaApt(onLine: (String) -> Unit): Boolean =
         runStreaming(BASH, arrayOf("-lc", "apt-get remove -y rust-analyzer"), onLine)
-
-    suspend fun rustAnalyzerAptPath(): String? {
-        val result = command(BASH, "-lc", "command -v rust-analyzer").output()
-        if (result.exitCode != 0) return null
-        return result.stdoutText.trim().takeIf { it.isNotEmpty() }
-    }
-
-    suspend fun isRustAnalyzerAptInstalled(): Boolean = rustAnalyzerAptPath() != null
 
     suspend fun loadState(): RustupState {
         if (!isInstalled()) return RustupState.NotInstalled
@@ -108,6 +132,7 @@ class RustupController {
             RustupState.Ready(
                 toolchains = listToolchains(),
                 components = componentState(),
+                lsp = lspState(),
                 activeTargets = activeTargets(),
             )
         } catch (e: Exception) {
