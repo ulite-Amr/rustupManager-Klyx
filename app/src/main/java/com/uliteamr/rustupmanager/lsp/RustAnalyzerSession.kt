@@ -30,14 +30,16 @@ object RustAnalyzerSession {
 
     private var current: ProcessHandle? = null
 
-    fun attach(handle: ProcessHandle, scope: CoroutineScope) {
+    fun attach(handle: ProcessHandle, scope: CoroutineScope, drainStderr: Boolean = false) {
         current = handle
         status = LspStatus.Running(handle.pid)
         appendLog("--- started (pid ${handle.pid}) ---")
 
-        // Continuously draining stderr is required here: rust-analyzer logs to stderr, and if
-        // nothing reads that pipe it fills up and the process blocks on its next write, which
-        // silently freezes the whole language server. This loop doubles as the live log feed.
+        if (!drainStderr) return
+
+        // Only relevant when stderr is captured (Stdio.Capture) instead of inherited. Draining
+        // it is required in that case: rust-analyzer logs to stderr, and if nothing reads that
+        // pipe it fills up and the process blocks on its next write, freezing the server.
         scope.launch(Dispatchers.IO) {
             try {
                 handle.stderr.bufferedReader().forEachLine { line -> appendLog(line) }

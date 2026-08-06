@@ -1,6 +1,8 @@
 package com.uliteamr.rustupmanager.lsp
 
 import com.klyx.api.lsp.LanguageServerProvider
+import com.klyx.api.system.Stdin
+import com.klyx.api.system.Stdio
 import com.klyx.api.system.command
 import com.klyx.lsp.server.LanguageClient
 import com.klyx.lsp.server.LanguageServer
@@ -14,6 +16,10 @@ import kotlinx.io.asSource
  * bare name against the rootfs's own PATH (falling through to a login-shell lookup), so this
  * works whether rust-analyzer was installed via `rustup component add` or `apt install` --
  * and avoids a guest-path translation bug that broke the absolute-path form.
+ *
+ * stderr is set to Inherit (not Capture) here to match a known-working reference
+ * implementation exactly, instead of capturing it ourselves and draining it in a background
+ * coroutine -- ruling out our own stderr-draining code as a source of the bridge issue.
  */
 class RustAnalyzerProvider(
     private val scope: CoroutineScope,
@@ -23,8 +29,11 @@ class RustAnalyzerProvider(
         try {
             val handle = command("rust-analyzer")
                 .env("RA_LOG", "info")
+                .stdin(Stdin.Pipe)
+                .stdout(Stdio.Capture)
+                .stderr(Stdio.Inherit)
                 .spawn()
-            RustAnalyzerSession.attach(handle, scope)
+            RustAnalyzerSession.attach(handle, scope, drainStderr = false)
 
             return createLanguageServer(
                 client = client,
