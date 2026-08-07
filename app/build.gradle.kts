@@ -23,3 +23,20 @@ android {
         }
     }
 }
+
+// Workaround for a klyx-gradle-plugin bug: at configuration time it reads
+// build/klyx/generated/plugin.json to resolve the bundle icon, and treats a
+// missing file as an absent provider, which crashes task creation with
+// "Cannot query the value of this provider because it has no value available".
+// Seed the descriptor from the committed root plugin.json so configuration
+// succeeds; the klyx compiler plugin overwrites it with the real descriptor
+// during compileReleaseKotlin before the bundle is assembled.
+val generatedDescriptorDir = layout.buildDirectory.dir("klyx/generated").get().asFile
+val generatedDescriptor = generatedDescriptorDir.resolve("plugin.json")
+if (!generatedDescriptor.exists()) {
+    val rootDescriptor = rootProject.file("plugin.json")
+    if (rootDescriptor.isFile) {
+        generatedDescriptorDir.mkdirs()
+        rootDescriptor.copyTo(generatedDescriptor)
+    }
+}
