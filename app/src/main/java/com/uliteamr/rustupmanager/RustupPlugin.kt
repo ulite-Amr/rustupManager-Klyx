@@ -17,6 +17,7 @@ import com.klyx.api.plugin.plugin
 import com.klyx.api.plugin.pluginContext
 import com.klyx.api.plugin.pluginScope
 import com.klyx.api.plugin.runtime
+import com.klyx.api.plugin.showToast
 import com.klyx.api.service.Tabs
 import com.klyx.api.ui.ScreenId
 import com.klyx.api.ui.ScreenRegistry
@@ -33,11 +34,11 @@ import com.uliteamr.rustupmanager.settings.RustupSettingsContent
 import com.uliteamr.rustupmanager.settings.SettingsKeys
 import com.uliteamr.rustupmanager.ui.DashboardScreen
 import com.uliteamr.rustupmanager.ui.LspScreen
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.snapshotFlow
 import kotlinx.coroutines.launch
 
 private val DASHBOARD_SCREEN = ScreenId("com.uliteamr.rustupmanager.dashboard")
