@@ -46,11 +46,7 @@ object RustAnalyzerSession {
             } catch (_: Exception) {
                 // Stream closed because the process died or was killed; fall through to status update.
             } finally {
-                val code = try {
-                    if (!handle.isRunning) handle.exitCode else -1
-                } catch (_: Exception) {
-                    -1
-                }
+                val code = exitCodeOf(handle)
                 status = LspStatus.Exited(code)
                 appendLog("--- exited (code $code) ---")
             }
@@ -67,6 +63,19 @@ object RustAnalyzerSession {
 
     fun clearLogs() {
         logs.clear()
+    }
+
+    /** Polls briefly for the process to fully exit so we can report its real exit code. */
+    private fun exitCodeOf(handle: ProcessHandle): Int {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (handle.isRunning && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+        }
+        return try {
+            if (!handle.isRunning) handle.exitCode else -1
+        } catch (_: Exception) {
+            -1
+        }
     }
 
     private fun appendLog(line: String) {

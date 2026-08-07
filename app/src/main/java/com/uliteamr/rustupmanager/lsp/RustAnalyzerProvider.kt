@@ -6,10 +6,9 @@ import com.klyx.api.system.Stdio
 import com.klyx.api.system.command
 import com.klyx.lsp.server.LanguageClient
 import com.klyx.lsp.server.LanguageServer
-import com.klyx.lsp.server.createLanguageServer
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.io.asSink
-import kotlinx.io.asSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Spawns rust-analyzer by its bare command name rather than an absolute path. Klyx resolves a
@@ -17,28 +16,27 @@ import kotlinx.io.asSource
  * works whether rust-analyzer was installed via `rustup component add` or `apt install` --
  * and avoids a guest-path translation bug that broke the absolute-path form.
  *
- * stderr is set to Inherit (not Capture) here to match a known-working reference
- * implementation exactly, instead of capturing it ourselves and draining it in a background
- * coroutine -- ruling out our own stderr-draining code as a source of the bridge issue.
+ * stdin/stdout/stderr are piped like Klyx's own reference implementation, and stderr is drained
+ * by [RustAnalyzerSession] so rust-analyzer's log pipe can never fill up and stall the server
+ * while its output stays visible in the LSP dashboard.
  */
 class RustAnalyzerProvider(
     private val scope: CoroutineScope,
 ) : LanguageServerProvider {
 
-    override suspend fun startServer(client: LanguageClient): LanguageServer {
+    override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {
         try {
             val handle = command("rust-analyzer")
-                .env("RA_LOG", "info")
                 .stdin(Stdin.Pipe)
                 .stdout(Stdio.Capture)
-                .stderr(Stdio.Inherit)
+                .stderr(Stdio.Capture)
                 .spawn()
-            RustAnalyzerSession.attach(handle, scope, drainStderr = false)
+            RustAnalyzerSession.attach(handle, scope, drainStderr = true)
 
-            return createLanguageServer(
+            LanguageServer(
                 client = client,
-                out = handle.stdout.asSource(),
-                `in` = handle.stdin.asSink(),
+                stdout = handle.stdout,
+                stdin = handle.stdin,
             )
         } catch (e: Exception) {
             // Klyx's host-side LspManager swallows exceptions from startServer via runCatching,
