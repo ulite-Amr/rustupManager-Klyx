@@ -189,7 +189,7 @@ private class ProgressScanInputStream(
 
     override fun read(): Int {
         val b = source.read()
-        if (b >= 0) feed(byteArrayOf(b.toByte()))
+        if (b >= 0) feed(byteArrayOf(b.toByte()), 0, 1)
         return b
     }
 
