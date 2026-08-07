@@ -43,9 +43,9 @@ fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
     val indexingProgress = RustAnalyzerSession.indexingProgress
     val logs = RustAnalyzerSession.logs
 
-    var reverseCompletion by remember { mutableStateOf(settings.getBoolean(SettingsKeys.reverseCompletion, true)) }
+    var reverseCompletion by remember { mutableStateOf(settings.getBoolean(SettingsKeys.reverseCompletion, false)) }
     var indexingToast by remember { mutableStateOf(settings.getBoolean(SettingsKeys.indexingToast, true)) }
-    var toolbarAutoHide by remember { mutableStateOf(settings.getBoolean(SettingsKeys.toolbarAutoHide, true)) }
+    var toolbarAutoHide by remember { mutableStateOf(settings.getBoolean(SettingsKeys.toolbarAutoHide, false)) }
 
     var errorsOnly by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
@@ -107,7 +107,7 @@ fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
             SectionLabel("Features")
             FeatureRow(
                 title = "Completion order fix",
-                description = "Reverses rust-analyzer's completion results so the most relevant entry appears on top",
+                description = "Reverses rust-analyzer's completion results. Off by default: rust-analyzer already returns the most relevant entry on top",
                 checked = reverseCompletion,
                 enabled = true,
                 onToggle = { enabled ->

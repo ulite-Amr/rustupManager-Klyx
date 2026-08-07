@@ -30,9 +30,10 @@ class RustAnalyzerProvider(
     override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {
         try {
             val handle = command("rust-analyzer")
-                // RA_LOG=info makes rust-analyzer print "indexing: N/M" progress on stderr so
-                // the plugin can surface an indexing indicator and toast. The host drops the
-                // $/progress notification, so stderr is the only reliable signal.
+                // RA_LOG=info keeps useful detail in the LSP dashboard logs. Indexing progress
+                // itself comes from the $/progress notifications we scan off stdout (see
+                // RustAnalyzerSession.wrapStdout); the host drops those notifications, and
+                // stderr's "indexing: N/M" lines are kept as a fallback for older builds.
                 .env("RA_LOG", "info")
                 .stdin(Stdin.Pipe)
                 .stdout(Stdio.Capture)
@@ -42,14 +43,14 @@ class RustAnalyzerProvider(
 
             val server = LanguageServer(
                 client = client,
-                stdout = handle.stdout,
+                stdout = RustAnalyzerSession.wrapStdout(handle.stdout),
                 stdin = handle.stdin,
             )
 
-            // rust-analyzer returns completion items ordered best-last, and Klyx preserves the
-            // server's order verbatim, so the popup ends up reversed. Flip it back unless the
-            // user disabled the workaround.
-            if (settings.getBoolean(SettingsKeys.reverseCompletion, true)) {
+            // rust-analyzer already returns completion items ordered by relevance (best first),
+            // and Klyx preserves the server's order verbatim. The reversal workaround is off by
+            // default; it exists only so users who preferred the old behavior can re-enable it.
+            if (settings.getBoolean(SettingsKeys.reverseCompletion, false)) {
                 ReversingLanguageServer(server)
             } else {
                 server

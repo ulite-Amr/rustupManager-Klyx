@@ -120,7 +120,7 @@ class RustupPlugin : KlyxPlugin {
 
     /** Shows the toolbar action only while a .rs file is open, unless auto-hide is disabled. */
     private fun syncToolbarVisibility() {
-        val autoHide = settings.getBoolean(SettingsKeys.toolbarAutoHide, true)
+        val autoHide = settings.getBoolean(SettingsKeys.toolbarAutoHide, false)
         val show = !autoHide || hasOpenRsFile()
         if (show && !toolbarActionRegistered) {
             toolbar.register(createToolbarAction())

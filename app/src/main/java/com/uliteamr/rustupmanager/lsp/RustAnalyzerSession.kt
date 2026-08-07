@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 private const val INDEXING_WATCHDOG_MS = 8_000L
 
@@ -25,10 +27,11 @@ sealed interface LspStatus {
  * screen can show live status/logs even though the process itself is started and owned by
  * the host whenever it needs a language server for a .rs file.
  *
- * Indexing is detected from rust-analyzer's stderr "indexing: N/M" progress lines (the host
- * drops the $/progress notification, so stderr is the only reliable signal). A watchdog
- * clears the flag if no progress line arrives for a while, covering the case where the
- * final "N/N" line is never printed.
+ * Indexing is detected by scanning the server's stdout for LSP `$/progress` notifications
+ * (token `rustAnalyzer/cachePriming`, title "Indexing") as the host reads it. Klyx advertises
+ * `workDoneProgress` but drops the notifications, so this wrapper is the only way to see the
+ * `N/M` progress. A watchdog clears the flag if no progress line arrives for a while, covering
+ * the case where the final `end` event is never received.
  */
 object RustAnalyzerSession {
 
@@ -43,11 +46,19 @@ object RustAnalyzerSession {
 
     val logs: SnapshotStateList<String> = mutableStateListOf()
 
-    private val indexingRegex = Regex("indexing\\s+(\\d+)/(\\d+)")
+    private val indexingRegex = Regex("indexing[:\\s]+(\\d+)/(\\d+)")
+    private val progressValueRegex = Regex("(\\d+)\\s*/\\s*(\\d+)")
 
     private var current: ProcessHandle? = null
     private var watchdogScope: CoroutineScope? = null
     private var watchdogJob: Job? = null
+
+    /**
+     * Wraps the server's stdout so the plugin can see `$/progress` frames while the host
+     * continues to read the stream unchanged. Every byte is passed through untouched.
+     */
+    fun wrapStdout(source: InputStream): InputStream =
+        ProgressScanInputStream(source) { token, kind, message -> onProgressEvent(token, kind, message) }
 
     fun attach(handle: ProcessHandle, scope: CoroutineScope, drainStderr: Boolean = false) {
         current = handle
@@ -107,6 +118,31 @@ object RustAnalyzerSession {
         }
     }
 
+    /** Handles a `$/progress` notification for the indexing token. */
+    private fun onProgressEvent(token: String, kind: String, message: String?) {
+        if (kind == "end") {
+            stopIndexing()
+            return
+        }
+        val progress = progressValueRegex.find(message.orEmpty())?.let { match ->
+            val n = match.groupValues[1].toIntOrNull()
+            val total = match.groupValues[2].toIntOrNull()
+            if (n != null && total != null) n to total else null
+        }
+        when (kind) {
+            "begin" -> {
+                isIndexing = true
+                indexingProgress = null
+                resetWatchdog()
+            }
+            "report" -> if (progress != null) {
+                isIndexing = true
+                indexingProgress = "${progress.first}/${progress.second}"
+                resetWatchdog()
+            }
+        }
+    }
+
     private fun resetWatchdog() {
         val scope = watchdogScope ?: return
         watchdogJob?.cancel()
@@ -134,5 +170,102 @@ object RustAnalyzerSession {
     private fun appendLog(line: String) {
         if (logs.size > 500) logs.removeAt(0)
         logs.add(line)
+    }
+}
+
+/**
+ * Pass-through [InputStream] that additionally scans LSP JSON-RPC frames for `$/progress`
+ * notifications while the host reads the stream. Frames are delimited by
+ * `Content-Length: N\r\n\r\n<json>`, exactly as the host's own frame reader expects, so the
+ * bytes handed to the host are unchanged.
+ */
+private class ProgressScanInputStream(
+    private val source: InputStream,
+    private val onProgress: (token: String, kind: String, message: String?) -> Unit,
+) : InputStream() {
+
+    private val buffer = ByteArrayOutputStream()
+    private var bodyRemaining = -1
+
+    override fun read(): Int {
+        val b = source.read()
+        if (b >= 0) feed(byteArrayOf(b.toByte()))
+        return b
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        val n = source.read(b, off, len)
+        if (n > 0) feed(b, off, n)
+        return n
+    }
+
+    override fun available(): Int = source.available()
+    override fun close() = source.close()
+    override fun skip(n: Long): Long = source.skip(n)
+
+    private fun feed(b: ByteArray, off: Int, len: Int) {
+        buffer.write(b, off, len)
+        scan()
+    }
+
+    private fun scan() {
+        while (true) {
+            if (bodyRemaining < 0) {
+                val data = buffer.toByteArray()
+                val headerEnd = indexOfHeaderEnd(data) ?: return
+                val header = String(data, 0, headerEnd, Charsets.UTF_8)
+                val length = contentLengthOf(header)
+                buffer.reset()
+                if (length == null) {
+                    // Not a Content-Length framed stream; give up scanning to avoid unbounded buffering.
+                    return
+                }
+                bodyRemaining = length
+                buffer.write(data, headerEnd, data.size - headerEnd)
+            }
+            if (buffer.size() < bodyRemaining) return
+            val data = buffer.toByteArray()
+            val json = String(data, 0, bodyRemaining, Charsets.UTF_8)
+            val leftover = data.size - bodyRemaining
+            buffer.reset()
+            if (leftover > 0) buffer.write(data, bodyRemaining, leftover)
+            bodyRemaining = -1
+            handleFrame(json)
+        }
+    }
+
+    private fun indexOfHeaderEnd(data: ByteArray): Int? {
+        val cr = '\r'.code.toByte()
+        val lf = '\n'.code.toByte()
+        var i = 0
+        while (i <= data.size - 4) {
+            if (data[i] == cr && data[i + 1] == lf && data[i + 2] == cr && data[i + 3] == lf) {
+                return i + 4
+            }
+            i++
+        }
+        return null
+    }
+
+    private fun contentLengthOf(header: String): Int? =
+        Regex("(?i)content-length\\s*:\\s*(\\d+)").find(header)?.groupValues?.get(1)?.toIntOrNull()
+
+    private fun handleFrame(json: String) {
+        if (!json.contains("\$/progress")) return
+        val token = tokenRegex.find(json)?.groupValues?.get(1) ?: return
+        if (!token.contains("indexing", ignoreCase = true) &&
+            !token.contains("cachePriming", ignoreCase = true)
+        ) {
+            return
+        }
+        val kind = kindRegex.find(json)?.groupValues?.get(1) ?: return
+        val message = messageRegex.find(json)?.groupValues?.get(1)
+        onProgress(token, kind, message)
+    }
+
+    companion object {
+        private val tokenRegex = Regex("\"token\"\\s*:\\s*\"([^\"]*)\"")
+        private val kindRegex = Regex("\"kind\"\\s*:\\s*\"(begin|report|end)\"")
+        private val messageRegex = Regex("\"message\"\\s*:\\s*\"([^\"]*)\"")
     }
 }
