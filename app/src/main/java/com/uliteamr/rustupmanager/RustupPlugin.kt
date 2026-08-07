@@ -27,6 +27,7 @@ import com.klyx.api.ui.ToolbarIcon
 import com.klyx.api.ui.ToolbarRegistry
 import com.klyx.core.event.EventSubscription
 import com.uliteamr.rustupmanager.icons.Wrench
+import com.uliteamr.rustupmanager.lsp.LspStatus
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerProvider
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerSession
 import com.uliteamr.rustupmanager.rustup.RustupController
@@ -70,6 +71,7 @@ class RustupPlugin : KlyxPlugin {
     private var settingsRegistration: PluginSettingsRegistration? = null
     private var fileOpenedSubscription: EventSubscription? = null
     private var toolbarActionRegistered = false
+    private val openRsTabIds = mutableSetOf<String>()
 
     override suspend fun onLoad() {
         screens[DASHBOARD_SCREEN] = {
@@ -88,11 +90,14 @@ class RustupPlugin : KlyxPlugin {
 
         settingsRegistration = settingsRegistry.register { RustupSettingsContent() }
 
-        // The toolbar action only shows while a .rs file is open. The plugin API has no
-        // tab-close/switch event, so we reconcile against Tabs on every file-open event
-        // (and on any settings change), and the onClick guards the stale-button case.
+        // With auto-hide enabled the toolbar action only shows once a .rs context exists (the
+        // host started rust-analyzer for a "rs" file, or a .rs tab is open). The plugin API has
+        // no tab-close/switch event, so we reconcile against Tabs on every file-open event (and
+        // on any settings change); the click itself always opens the dashboard.
         syncToolbarVisibility()
         fileOpenedSubscription = pluginContext.eventBus.subscribe(FileOpenedEvent::class) {
+            if (it.fileName.endsWith(".rs")) openRsTabIds += it.tabId
+            pruneOpenRsTabs()
             syncToolbarVisibility()
         }
         pluginScope.launch { settings.values.collect { syncToolbarVisibility() } }
@@ -118,10 +123,10 @@ class RustupPlugin : KlyxPlugin {
         settingsRegistration?.unregister()
     }
 
-    /** Shows the toolbar action only while a .rs file is open, unless auto-hide is disabled. */
+    /** Shows the toolbar action only while a .rs context exists, unless auto-hide is disabled. */
     private fun syncToolbarVisibility() {
         val autoHide = settings.getBoolean(SettingsKeys.toolbarAutoHide, false)
-        val show = !autoHide || hasOpenRsFile()
+        val show = !autoHide || hasRustContext()
         if (show && !toolbarActionRegistered) {
             toolbar.register(createToolbarAction())
             toolbarActionRegistered = true
@@ -138,28 +143,48 @@ class RustupPlugin : KlyxPlugin {
         category = ToolbarCategory("Rust"),
         priority = 100,
         onClick = {
-            if (hasOpenRsFile()) {
-                navigator.navigateTo(NavDestination.Custom(DASHBOARD_SCREEN))
-            } else {
-                showToast("Open a .rs file to manage rust-analyzer")
-            }
+            navigator.navigateTo(NavDestination.Custom(DASHBOARD_SCREEN))
         },
     )
 
-    private fun hasOpenRsFile(): Boolean =
-        tabs.opened.any { it is WorkspaceTab.TextFile && it.file.name.endsWith(".rs") }
+    /** True while a Rust context exists: the host started rust-analyzer for a "rs" file, a .rs
+     *  tab is currently open, or one was opened this session. Mirrors how the markdown viewer
+     *  gates its runner on file type; here the host's own provider lookup is the gate. */
+    private fun hasRustContext(): Boolean =
+        RustAnalyzerSession.status is LspStatus.Running ||
+            tabs.opened.any { it is WorkspaceTab.TextFile && it.file.name.endsWith(".rs") } ||
+            openRsTabIds.isNotEmpty()
 
-    /** Toasts when rust-analyzer starts and finishes indexing. */
+    /** Drops .rs tab ids that are no longer open, but only when Tabs looks fresh (non-empty).
+     *  A stale/empty Tabs list would otherwise wipe out ids tracked via FileOpenedEvent. */
+    private fun pruneOpenRsTabs() {
+        val opened = tabs.opened
+        if (opened.isNotEmpty()) openRsTabIds.removeAll { id -> opened.none { it.id == id } }
+    }
+
+    /** Toasts once per LSP process for the first indexing cycle (begin + finish), so typing
+     *  bursts and watchdog flicker don't re-toast on every keystroke. */
     private suspend fun observeIndexing() {
-        snapshotFlow { RustAnalyzerSession.isIndexing }
+        var startShown = false
+        var endShown = false
+        snapshotFlow { RustAnalyzerSession.status to RustAnalyzerSession.isIndexing }
             .drop(1)
             .distinctUntilChanged()
-            .collect { indexing ->
+            .collect { (status, indexing) ->
                 if (!settings.getBoolean(SettingsKeys.indexingToast, true)) return@collect
-                if (indexing) {
-                    showToast("rust-analyzer is indexing…")
-                } else {
-                    showToast("rust-analyzer finished indexing")
+                when {
+                    status !is LspStatus.Running -> {
+                        startShown = false
+                        endShown = false
+                    }
+                    indexing && !startShown -> {
+                        startShown = true
+                        showToast("rust-analyzer is indexing…")
+                    }
+                    !indexing && startShown && !endShown -> {
+                        endShown = true
+                        showToast("rust-analyzer finished indexing")
+                    }
                 }
             }
     }
