@@ -28,9 +28,9 @@ private val INTERVALS = listOf(1 to "Daily", 7 to "Weekly", 30 to "Monthly")
 fun PluginSettings.RustupSettingsContent() {
     val scope = rememberCoroutineScope()
 
-    var autoCheck by remember { mutableStateOf(getBoolean("autoCheckUpdates", true)) }
-    var intervalDays by remember { mutableStateOf(getInt("checkIntervalDays", 7)) }
-    var defaultChannel by remember { mutableStateOf(getString("defaultChannel", "stable") ?: "stable") }
+    var autoCheck by remember { mutableStateOf(getBoolean(SettingsKeys.autoCheckUpdates, true)) }
+    var intervalDays by remember { mutableStateOf(getInt(SettingsKeys.checkIntervalDays, 7)) }
+    var defaultChannel by remember { mutableStateOf(getString(SettingsKeys.defaultChannel, "stable") ?: "stable") }
 
     Column {
         SettingsCard(
@@ -48,7 +48,7 @@ fun PluginSettings.RustupSettingsContent() {
                             selected = defaultChannel == channel,
                             onClick = {
                                 defaultChannel = channel
-                                scope.launch { putString("defaultChannel", channel) }
+                                scope.launch { putString(SettingsKeys.defaultChannel, channel) }
                             },
                         )
                     }
@@ -65,7 +65,7 @@ fun PluginSettings.RustupSettingsContent() {
                     checked = autoCheck,
                     onCheckedChange = { enabled ->
                         autoCheck = enabled
-                        scope.launch { putBoolean("autoCheckUpdates", enabled) }
+                        scope.launch { putBoolean(SettingsKeys.autoCheckUpdates, enabled) }
                     },
                 )
             },
@@ -86,7 +86,7 @@ fun PluginSettings.RustupSettingsContent() {
                                 selected = intervalDays == days,
                                 onClick = {
                                     intervalDays = days
-                                    scope.launch { putInt("checkIntervalDays", days) }
+                                    scope.launch { putInt(SettingsKeys.checkIntervalDays, days) }
                                 },
                             )
                         }

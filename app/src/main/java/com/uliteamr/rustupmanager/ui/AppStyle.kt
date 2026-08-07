@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -193,22 +194,35 @@ fun LogPanel(lines: List<String>, modifier: Modifier = Modifier, minHeight: Dp =
                 )
             }
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.heightIn(min = minHeight, max = 260.dp),
-                contentPadding = PaddingValues(12.dp),
-            ) {
-                items(lines) { line ->
-                    Text(
-                        text = line,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            SelectionContainer {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.heightIn(min = minHeight, max = 260.dp),
+                    contentPadding = PaddingValues(12.dp),
+                ) {
+                    items(lines) { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = if (isErrorLine(line)) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+/** Rough classification of rust-analyzer log lines for the "Errors" filter and coloring. */
+internal fun isErrorLine(line: String): Boolean =
+    line.contains("ERROR", ignoreCase = true) ||
+        line.contains("PANIC", ignoreCase = true) ||
+        line.contains("FATAL", ignoreCase = true) ||
+        line.startsWith("!!!")
 
 @Composable
 fun InlineSpinner() {
