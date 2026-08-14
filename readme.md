@@ -2,13 +2,6 @@
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> [!NOTE]
-> Klyx currently implements only a subset of the LSP protocol (diagnostics, completion, inlay hints).
-> Features like hover, go-to definition, find references, rename, code actions, and signature help are
-> listed in the plugin's LSP screen as **"Not available yet"** because the Klyx host doesn't support them
-> yet — this is a Klyx limitation, not a plugin bug. The plugin is ready to unlock these features as soon
-> as Klyx ships support for them.
-
 A full Rust toolchain manager for [Klyx](https://klyx.dev), built directly on top of `rustup` and the Linux environment that ships inside Klyx.
 
 Install toolchains, switch the default, manage components and cross-compilation targets, and get `rust-analyzer` wired up as the language server for `.rs` files — all from one dashboard inside Klyx.
@@ -50,6 +43,10 @@ Requires JDK 21 and the Android SDK (the CI workflow uses `compileSdk 37`).
 ```
 
 The bundled `.klyx` file is written to `output/`.
+
+## Limitations and known issues
+
+Klyx only supports a subset of the LSP protocol (diagnostics, completion, inlay hints). Features like hover, go-to definition, find references, rename, code actions, and signature help show as **"Not available yet"** in the plugin's LSP screen — a Klyx limitation, not a plugin bug. The plugin is ready to unlock them as soon as Klyx ships support.
 
 ## License
 
