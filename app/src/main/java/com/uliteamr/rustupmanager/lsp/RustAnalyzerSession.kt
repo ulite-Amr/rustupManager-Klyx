@@ -81,7 +81,11 @@ object RustAnalyzerSession {
         // pipe it fills up and the process blocks on its next write, freezing the server.
         scope.launch(Dispatchers.IO) {
             try {
-                handle.stderr.bufferedReader().forEachLine { line -> onLine(client, line) }
+                val reader = handle.stderr.bufferedReader()
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    onLine(client, line)
+                }
             } catch (_: Exception) {
                 // Stream closed because the process died or was killed; fall through to status update.
             } finally {
