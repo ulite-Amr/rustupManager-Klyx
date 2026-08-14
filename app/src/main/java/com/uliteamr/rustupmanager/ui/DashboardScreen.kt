@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,51 +56,64 @@ import com.uliteamr.rustupmanager.icons.Refresh
 import com.uliteamr.rustupmanager.icons.Server
 import com.uliteamr.rustupmanager.icons.Terminal
 import com.uliteamr.rustupmanager.icons.Warning
-import com.uliteamr.rustupmanager.rustup.GithubRelease
 import com.uliteamr.rustupmanager.rustup.LspChannel
 import com.uliteamr.rustupmanager.rustup.LspSource
 import com.uliteamr.rustupmanager.rustup.LspState
-import com.uliteamr.rustupmanager.rustup.ManagedLspVersion
+import com.uliteamr.rustupmanager.rustup.OpProgress
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.rustup.RustupState
 import com.uliteamr.rustupmanager.rustup.Toolchain
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 private const val LOG_TAG = "Rustup"
 
+/** Runs an operation, publishing live [OpProgress] into [progress] (its owning card recomposes
+ *  only), logging output to the SDK, then runs [onDone] (a section-scoped refresh). */
+private fun runOp(
+    scope: CoroutineScope,
+    logger: Logger,
+    progress: MutableState<OpProgress?>,
+    label: String,
+    onDone: suspend () -> Unit,
+    action: suspend (onLine: (String) -> Unit, onProgress: (Float?) -> Unit) -> Boolean,
+) {
+    scope.launch {
+        progress.value = OpProgress(label, null)
+        logger.info(LOG_TAG, "$ $label")
+        try {
+            val ok = action(
+                { line -> logger.info(LOG_TAG, line) },
+                { fraction -> progress.value = OpProgress(label, fraction) },
+            )
+            if (ok) logger.info(LOG_TAG, "done") else logger.warn(LOG_TAG, "failed (see log above)")
+        } catch (e: Exception) {
+            logger.error(LOG_TAG, e.message ?: "unexpected failure", e)
+        } finally {
+            progress.value = null
+            onDone()
+        }
+    }
+}
+
 @Composable
 fun DashboardScreen(
     rustup: RustupController,
+    lspManager: LspManager,
     onOpenLsp: () -> Unit,
+    onOpenVersions: () -> Unit,
     onOpenTerminal: () -> Unit,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val logger: Logger = rememberLogger()
     var state by remember { mutableStateOf<RustupState>(RustupState.Checking) }
-    var busy by remember { mutableStateOf(false) }
 
     suspend fun refresh() {
         state = rustup.loadState()
     }
 
     LaunchedEffect(Unit) { refresh() }
-
-    fun runAction(label: String, action: suspend ((String) -> Unit) -> Boolean) {
-        scope.launch {
-            busy = true
-            logger.info(LOG_TAG, "$ $label")
-            try {
-                val ok = action { line -> logger.info(LOG_TAG, line) }
-                if (ok) logger.info(LOG_TAG, "done") else logger.warn(LOG_TAG, "failed (see log above)")
-            } catch (e: Exception) {
-                logger.error(LOG_TAG, e.message ?: "unexpected failure", e)
-            } finally {
-                busy = false
-                refresh()
-            }
-        }
-    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         ScreenHeader(
@@ -137,45 +151,20 @@ fun DashboardScreen(
                     onRetry = { scope.launch { refresh() } },
                 )
                 RustupState.NotInstalled -> NotInstalledBody(
-                    busy = busy,
-                    onInstall = { runAction("rustup-init") { onLine -> rustup.bootstrapInstall(onLine) } },
-                    onReset = { runAction("reset rustup state") { onLine -> rustup.resetInstall(onLine) } },
+                    scope = scope,
+                    logger = logger,
+                    rustup = rustup,
+                    onRefresh = { refresh() },
                 )
                 is RustupState.Error -> ErrorBody(current.message) { scope.launch { refresh() } }
                 is RustupState.Ready -> ReadyBody(
                     state = current,
-                    busy = busy,
+                    rustup = rustup,
+                    lspManager = lspManager,
+                    scope = scope,
+                    logger = logger,
                     onOpenLsp = onOpenLsp,
-                    onSetDefault = { name -> runAction("rustup default $name") { onLine -> rustup.setDefaultToolchain(name, onLine) } },
-                    onUninstallToolchain = { name -> runAction("rustup toolchain uninstall $name") { onLine -> rustup.uninstallToolchain(name, onLine) } },
-                    onInstallToolchain = { name -> runAction("rustup toolchain install $name") { onLine -> rustup.installToolchain(name, onLine) } },
-                    onUpdateToolchain = { name -> runAction("rustup update $name") { onLine -> rustup.updateToolchain(name, onLine) } },
-                    onToggleComponent = { component, enable ->
-                        val label = if (enable) "rustup component add $component" else "rustup component remove $component"
-                        runAction(label) { onLine ->
-                            if (enable) rustup.addComponent(component, onLine) else rustup.removeComponent(component, onLine)
-                        }
-                    },
-                    onRemoveTarget = { target -> runAction("rustup target remove $target") { onLine -> rustup.removeTarget(target, onLine) } },
-                    onAddTarget = { target -> runAction("rustup target add $target") { onLine -> rustup.addTarget(target, onLine) } },
-                    onUpdateAll = { runAction("rustup update") { onLine -> rustup.updateAll(onLine) } },
-                    onInstallRustupLsp = {
-                        runAction("rustup component add rust-analyzer") { onLine -> rustup.installLspViaRustup(onLine) }
-                    },
-                    onRemoveRustupLsp = {
-                        runAction("rustup component remove rust-analyzer") { onLine -> rustup.removeLspViaRustup(onLine) }
-                    },
-                    onInstallVersion = { tag ->
-                        runAction("install rust-analyzer $tag") { onLine -> rustup.installLspViaGithub(tag, onLine) }
-                    },
-                    onUseVersion = { tag ->
-                        runAction("activate rust-analyzer $tag") { onLine -> rustup.useManagedLsp(tag, onLine) }
-                    },
-                    onRemoveVersion = { tag ->
-                        runAction("remove rust-analyzer $tag") { onLine -> rustup.removeManagedLsp(tag, onLine) }
-                    },
-                    onFetchLatest = { channel -> rustup.githubLatestTag(channel) },
-                    onFetchReleases = { rustup.githubReleases() },
+                    onOpenVersions = onOpenVersions,
                 )
             }
         }
@@ -265,10 +254,14 @@ private fun ErrorBody(message: String, onRetry: () -> Unit) {
 
 @Composable
 private fun NotInstalledBody(
-    busy: Boolean,
-    onInstall: () -> Unit,
-    onReset: () -> Unit,
+    scope: CoroutineScope,
+    logger: Logger,
+    rustup: RustupController,
+    onRefresh: suspend () -> Unit,
 ) {
+    val installOp = remember { mutableStateOf<OpProgress?>(null) }
+    val resetOp = remember { mutableStateOf<OpProgress?>(null) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         SettingsCard(
             icon = Download,
@@ -279,22 +272,34 @@ private fun NotInstalledBody(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(onClick = onInstall, enabled = !busy, modifier = Modifier.weight(1f)) {
+            Button(
+                onClick = { runOp(scope, logger, installOp, "rustup-init", onDone = onRefresh) { l, p -> rustup.bootstrapInstall(l, p) } },
+                enabled = installOp.value == null && resetOp.value == null,
+                modifier = Modifier.weight(1f),
+            ) {
                 Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (busy) "Working..." else "Install rustup")
+                Text(if (installOp.value != null) "Installing..." else "Install rustup")
             }
-            OutlinedButton(onClick = onReset, enabled = !busy) {
+            OutlinedButton(
+                onClick = { runOp(scope, logger, resetOp, "reset rustup state", onDone = onRefresh) { l, _ -> rustup.resetInstall(l) } },
+                enabled = installOp.value == null && resetOp.value == null,
+            ) {
                 Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Reset & retry")
             }
         }
-        if (busy) {
-            ExpressiveLinearProgressIndicator(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+        if (installOp.value != null) {
+            OpProgressBar(
+                progress = installOp.value,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
+        if (resetOp.value != null) {
+            OpProgressBar(
+                progress = resetOp.value,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             )
         }
         Text(
@@ -310,56 +315,40 @@ private fun NotInstalledBody(
 @Composable
 private fun ReadyBody(
     state: RustupState.Ready,
-    busy: Boolean,
+    rustup: RustupController,
+    lspManager: LspManager,
+    scope: CoroutineScope,
+    logger: Logger,
     onOpenLsp: () -> Unit,
-    onSetDefault: (String) -> Unit,
-    onUninstallToolchain: (String) -> Unit,
-    onInstallToolchain: (String) -> Unit,
-    onUpdateToolchain: (String) -> Unit,
-    onToggleComponent: (String, Boolean) -> Unit,
-    onRemoveTarget: (String) -> Unit,
-    onAddTarget: (String) -> Unit,
-    onUpdateAll: () -> Unit,
-    onInstallRustupLsp: () -> Unit,
-    onRemoveRustupLsp: () -> Unit,
-    onInstallVersion: (String) -> Unit,
-    onUseVersion: (String) -> Unit,
-    onRemoveVersion: (String) -> Unit,
-    onFetchLatest: suspend (LspChannel) -> String?,
-    onFetchReleases: suspend () -> List<GithubRelease>,
+    onOpenVersions: () -> Unit,
 ) {
+    var toolchains by remember { mutableStateOf(state.toolchains) }
+    var components by remember { mutableStateOf(state.components) }
+    var targets by remember { mutableStateOf(state.activeTargets) }
     var lspSource by remember { mutableStateOf(LspSource.Rustup) }
+    val updateAllOp = remember { mutableStateOf<OpProgress?>(null) }
+
+    suspend fun reloadToolchains() { toolchains = rustup.listToolchains() }
+    suspend fun reloadComponents() { components = rustup.componentState() }
+    suspend fun reloadTargets() { targets = rustup.activeTargets() }
+
+    LaunchedEffect(Unit) { lspManager.refresh() }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item {
-            if (busy) {
-                ExpressiveLinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
-        }
-
+        item { SectionLabel("Language server") }
         item {
             LspSourceCard(
-                lsp = state.lsp,
+                rustup = rustup,
+                lspManager = lspManager,
                 selected = lspSource,
                 onSelect = { lspSource = it },
-                busy = busy,
-                onInstallRustup = onInstallRustupLsp,
-                onRemoveRustup = onRemoveRustupLsp,
-                onInstallVersion = onInstallVersion,
-                onUseVersion = onUseVersion,
-                onRemoveVersion = onRemoveVersion,
-                onFetchLatest = onFetchLatest,
-                onFetchReleases = onFetchReleases,
                 onOpenLsp = onOpenLsp,
+                onOpenVersions = onOpenVersions,
             )
         }
 
         item { SectionLabel("Toolchains") }
-        if (state.toolchains.isEmpty()) {
+        if (toolchains.isEmpty()) {
             item {
                 SettingsCard(
                     icon = Info,
@@ -368,31 +357,38 @@ private fun ReadyBody(
                 )
             }
         } else {
-            items(state.toolchains) { toolchain ->
+            items(toolchains, key = { it.name }) { toolchain ->
                 ToolchainRow(
                     toolchain = toolchain,
-                    enabled = !busy,
-                    onSetDefault = { onSetDefault(toolchain.name) },
-                    onUninstall = { onUninstallToolchain(toolchain.name) },
-                    onUpdate = { onUpdateToolchain(toolchain.name) },
+                    rustup = rustup,
+                    scope = scope,
+                    logger = logger,
+                    onDone = { reloadToolchains() },
                 )
             }
         }
-        item { InstallToolchainRow(enabled = !busy, onInstall = onInstallToolchain) }
+        item {
+            InstallToolchainRow(
+                rustup = rustup,
+                scope = scope,
+                logger = logger,
+                onDone = { reloadToolchains() },
+            )
+        }
 
         item { SectionLabel("Components") }
         item {
             SettingsCard {
                 Column {
-                    ComponentRow("clippy", state.components.clippy, !busy, onToggleComponent)
-                    ComponentRow("rustfmt", state.components.rustfmt, !busy, onToggleComponent)
-                    ComponentRow("rust-src", state.components.rustSrc, !busy, onToggleComponent)
+                    ComponentRow("clippy", components.clippy, rustup, scope, logger, reloadComponents)
+                    ComponentRow("rustfmt", components.rustfmt, rustup, scope, logger, reloadComponents)
+                    ComponentRow("rust-src", components.rustSrc, rustup, scope, logger, reloadComponents)
                 }
             }
         }
 
         item { SectionLabel("Targets") }
-        if (state.activeTargets.isEmpty()) {
+        if (targets.isEmpty()) {
             item {
                 SettingsCard(
                     icon = Info,
@@ -401,115 +397,102 @@ private fun ReadyBody(
                 )
             }
         } else {
-            items(state.activeTargets) { target ->
-                TargetRow(target = target, enabled = !busy, onRemove = { onRemoveTarget(target) })
+            items(targets) { target ->
+                TargetRow(
+                    target = target,
+                    rustup = rustup,
+                    scope = scope,
+                    logger = logger,
+                    onDone = { reloadTargets() },
+                )
             }
         }
-        item { AddTargetRow(enabled = !busy, onAdd = onAddTarget) }
+        item {
+            AddTargetRow(
+                rustup = rustup,
+                scope = scope,
+                logger = logger,
+                onDone = { reloadTargets() },
+            )
+        }
 
         item {
-            OutlinedButton(
-                onClick = onUpdateAll,
-                enabled = !busy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Update all toolchains")
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                OutlinedButton(
+                    onClick = { runOp(scope, logger, updateAllOp, "rustup update", onDone = { reloadToolchains() }) { l, p -> rustup.updateAll(l, p) } },
+                    enabled = updateAllOp.value == null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Update all toolchains")
+                }
+                if (updateAllOp.value != null) {
+                    OpProgressBar(
+                        progress = updateAllOp.value,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
             }
         }
-
     }
 }
 
 @Composable
 private fun LspSourceCard(
-    lsp: LspState,
+    rustup: RustupController,
+    lspManager: LspManager,
     selected: LspSource,
     onSelect: (LspSource) -> Unit,
-    busy: Boolean,
-    onInstallRustup: () -> Unit,
-    onRemoveRustup: () -> Unit,
-    onInstallVersion: (String) -> Unit,
-    onUseVersion: (String) -> Unit,
-    onRemoveVersion: (String) -> Unit,
-    onFetchLatest: suspend (LspChannel) -> String?,
-    onFetchReleases: suspend () -> List<GithubRelease>,
     onOpenLsp: () -> Unit,
+    onOpenVersions: () -> Unit,
 ) {
     var channel by remember { mutableStateOf(LspChannel.Stable) }
     var latestTag by remember { mutableStateOf<String?>(null) }
-    var releases by remember { mutableStateOf<List<GithubRelease>?>(null) }
-    var fetchError by remember { mutableStateOf(false) }
+    var latestError by remember { mutableStateOf(false) }
     var fetchTick by remember { mutableStateOf(0) }
 
     suspend fun refreshLatest() {
-        fetchError = false
+        latestError = false
         latestTag = null
-        val tag = onFetchLatest(channel)
-        if (tag == null) fetchError = true else latestTag = tag
-    }
-
-    suspend fun refreshReleases() {
-        fetchError = false
-        releases = null
-        val list = onFetchReleases()
-        if (list.isEmpty()) fetchError = true else releases = list
+        val tag = rustup.githubLatestTag(channel)
+        if (tag == null) latestError = true else latestTag = tag
     }
 
     LaunchedEffect(selected, channel, fetchTick) {
         when (selected) {
             LspSource.Rustup -> Unit
             LspSource.Latest -> refreshLatest()
-            LspSource.Versions -> refreshReleases()
+            LspSource.Versions -> lspManager.fetchReleases()
         }
     }
 
     SettingsCard(
         icon = Server,
         title = "Language server",
-        description = statusLine(lsp),
+        description = statusLine(lspManager.lsp),
         trailing = { TextButton(onClick = onOpenLsp) { Text("Manage") } },
         content = {
             Column {
                 SegmentedChoice(
                     options = listOf("rustup", "latest", "versions"),
                     selected = selected.name.lowercase(),
-                    enabled = !busy,
                     onSelect = { onSelect(LspSource.valueOf(it.replaceFirstChar { c -> c.uppercase() })) },
                 )
                 when (selected) {
-                    LspSource.Rustup -> RustupLspTab(
-                        installed = lsp.installedViaRustup,
-                        busy = busy,
-                        onInstall = onInstallRustup,
-                        onRemove = onRemoveRustup,
-                    )
+                    LspSource.Rustup -> RustupLspTab(lspManager = lspManager)
                     LspSource.Latest -> LatestLspTab(
-                        lsp = lsp,
+                        lspManager = lspManager,
                         channel = channel,
                         onChannelChange = { channel = it },
                         latestTag = latestTag,
-                        fetching = latestTag == null && !fetchError,
-                        fetchError = fetchError,
+                        fetching = latestTag == null && !latestError,
+                        fetchError = latestError,
                         onRefresh = { fetchTick++ },
-                        busy = busy,
-                        onInstall = { latestTag?.let(onInstallVersion) },
-                        onUse = { latestTag?.let(onUseVersion) },
-                        onRemove = { latestTag?.let(onRemoveVersion) },
                     )
                     LspSource.Versions -> VersionsLspTab(
-                        lsp = lsp,
-                        releases = releases,
-                        fetching = releases == null && !fetchError,
-                        fetchError = fetchError,
-                        onRefresh = { fetchTick++ },
-                        busy = busy,
-                        onInstall = onInstallVersion,
-                        onUse = onUseVersion,
-                        onRemove = onRemoveVersion,
+                        lspManager = lspManager,
+                        onOpenVersions = onOpenVersions,
                     )
                 }
             }
@@ -518,16 +501,16 @@ private fun LspSourceCard(
 }
 
 @Composable
-private fun RustupLspTab(
-    installed: Boolean,
-    busy: Boolean,
-    onInstall: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Row(modifier = Modifier.padding(top = 12.dp)) {
+private fun RustupLspTab(lspManager: LspManager) {
+    val scope = rememberCoroutineScope()
+    val installed = lspManager.lsp.installedViaRustup
+    val busy = lspManager.rustupBusy()
+    val progress = lspManager.tracker.state("lsp:rustup:install").value
+
+    Column(modifier = Modifier.padding(top = 12.dp)) {
         if (installed) {
             OutlinedButton(
-                onClick = onRemove,
+                onClick = { scope.launch { lspManager.removeViaRustup { } } },
                 enabled = !busy,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
@@ -536,29 +519,32 @@ private fun RustupLspTab(
                 Text("Remove (rustup)")
             }
         } else {
-            Button(onClick = onInstall, enabled = !busy) {
+            Button(onClick = { scope.launch { lspManager.installViaRustup { } } }, enabled = !busy) {
                 Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Install via rustup")
             }
+        }
+        if (busy) {
+            OpProgressBar(
+                progress = progress,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            )
         }
     }
 }
 
 @Composable
 private fun LatestLspTab(
-    lsp: LspState,
+    lspManager: LspManager,
     channel: LspChannel,
     onChannelChange: (LspChannel) -> Unit,
     latestTag: String?,
     fetching: Boolean,
     fetchError: Boolean,
     onRefresh: () -> Unit,
-    busy: Boolean,
-    onInstall: () -> Unit,
-    onUse: () -> Unit,
-    onRemove: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     Column {
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -568,15 +554,14 @@ private fun LatestLspTab(
             SegmentedChoice(
                 options = listOf("Stable", "Nightly"),
                 selected = channel.name,
-                enabled = !busy,
                 onSelect = { onChannelChange(if (it == "Nightly") LspChannel.Nightly else LspChannel.Stable) },
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = onRefresh, enabled = !busy) { Icon(Refresh, contentDescription = "Refresh") }
+            IconButton(onClick = onRefresh) { Icon(Refresh, contentDescription = "Refresh") }
         }
 
         val tag = latestTag
-        val managed = tag?.let { t -> lsp.versions.firstOrNull { it.tag == t } }
+        val managed = tag?.let { t -> lspManager.lsp.versions.firstOrNull { it.tag == t } }
         when {
             fetching -> Row(
                 modifier = Modifier.padding(top = 12.dp),
@@ -597,7 +582,7 @@ private fun LatestLspTab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onRefresh, enabled = !busy) { Text("Retry") }
+                TextButton(onClick = onRefresh) { Text("Retry") }
             }
             else -> {
                 val label = if (channel == LspChannel.Stable) "Latest stable" else "Nightly (rolling)"
@@ -622,8 +607,8 @@ private fun LatestLspTab(
                 ) {
                     when {
                         managed?.isActive == true -> OutlinedButton(
-                            onClick = onRemove,
-                            enabled = !busy,
+                            onClick = { scope.launch { lspManager.remove(tag) { } } },
+                            enabled = !lspManager.isBusy(tag),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         ) {
                             Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -631,14 +616,14 @@ private fun LatestLspTab(
                             Text("Remove")
                         }
                         managed != null -> {
-                            FilledTonalButton(onClick = onUse, enabled = !busy) {
+                            FilledTonalButton(onClick = { scope.launch { lspManager.use(tag) { } } }, enabled = !lspManager.isBusy(tag)) {
                                 Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Use")
                             }
                             OutlinedButton(
-                                onClick = onRemove,
-                                enabled = !busy,
+                                onClick = { scope.launch { lspManager.remove(tag) { } } },
+                                enabled = !lspManager.isBusy(tag),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                             ) {
                                 Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -646,12 +631,18 @@ private fun LatestLspTab(
                                 Text("Remove")
                             }
                         }
-                        else -> Button(onClick = onInstall, enabled = !busy) {
+                        else -> Button(onClick = { scope.launch { lspManager.install(tag) { } } }, enabled = !lspManager.isBusy(tag)) {
                             Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(if (channel == LspChannel.Stable) "Install latest stable" else "Install nightly")
                         }
                     }
+                }
+                if (lspManager.isBusy(tag)) {
+                    OpProgressBar(
+                        progress = lspManager.installProgress(tag),
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    )
                 }
             }
         }
@@ -660,16 +651,11 @@ private fun LatestLspTab(
 
 @Composable
 private fun VersionsLspTab(
-    lsp: LspState,
-    releases: List<GithubRelease>?,
-    fetching: Boolean,
-    fetchError: Boolean,
-    onRefresh: () -> Unit,
-    busy: Boolean,
-    onInstall: (String) -> Unit,
-    onUse: (String) -> Unit,
-    onRemove: (String) -> Unit,
+    lspManager: LspManager,
+    onOpenVersions: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    val releases = lspManager.releases
     Column {
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -681,10 +667,10 @@ private fun VersionsLspTab(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = onRefresh, enabled = !busy) { Icon(Refresh, contentDescription = "Refresh") }
+            IconButton(onClick = { scope.launch { lspManager.fetchReleases() } }) { Icon(Refresh, contentDescription = "Refresh") }
         }
         when {
-            fetching -> Row(
+            releases == null && !lspManager.fetchError -> Row(
                 modifier = Modifier.padding(vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -692,7 +678,7 @@ private fun VersionsLspTab(
                 Spacer(Modifier.width(8.dp))
                 Text("Loading releases...")
             }
-            fetchError || releases == null -> Text(
+            lspManager.fetchError || releases == null -> Text(
                 "Couldn't reach GitHub — check your connection.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -704,70 +690,18 @@ private fun VersionsLspTab(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
-            else -> releases.forEach { release ->
-                ReleaseVersionRow(
-                    release = release,
-                    managed = lsp.versions.firstOrNull { it.tag == release.tag },
-                    busy = busy,
-                    onInstall = { onInstall(release.tag) },
-                    onUse = { onUse(release.tag) },
-                    onRemove = { onRemove(release.tag) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReleaseVersionRow(
-    release: GithubRelease,
-    managed: ManagedLspVersion?,
-    busy: Boolean,
-    onInstall: () -> Unit,
-    onUse: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    val title = if (release.isNightly) "nightly (rolling)" else release.tag
-    val description = when {
-        managed?.isActive == true -> "In use"
-        managed != null -> "Installed"
-        else -> "Not installed"
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (managed?.isActive == true) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-        }
-        when {
-            managed?.isActive == true -> OutlinedButton(
-                onClick = onRemove,
-                enabled = !busy,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Remove") }
-            managed != null -> {
-                FilledTonalButton(onClick = onUse, enabled = !busy) { Text("Use") }
-                OutlinedButton(
-                    onClick = onRemove,
-                    enabled = !busy,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("Remove") }
-            }
-            else -> Button(onClick = onInstall, enabled = !busy) {
-                Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Install")
+            else -> {
+                releases.take(10).forEach { release ->
+                    ReleaseVersionRow(lspManager = lspManager, release = release)
+                }
+                if (releases.size > 10) {
+                    TextButton(
+                        onClick = onOpenVersions,
+                        modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
+                    ) {
+                        Text("Show all (${releases.size})")
+                    }
+                }
             }
         }
     }
@@ -782,11 +716,14 @@ private fun statusLine(lsp: LspState): String = when {
 @Composable
 private fun ToolchainRow(
     toolchain: Toolchain,
-    enabled: Boolean,
-    onSetDefault: () -> Unit,
-    onUninstall: () -> Unit,
-    onUpdate: () -> Unit,
+    rustup: RustupController,
+    scope: CoroutineScope,
+    logger: Logger,
+    onDone: suspend () -> Unit,
 ) {
+    val op = remember { mutableStateOf<OpProgress?>(null) }
+    val enabled = op.value == null
+
     val description = buildString {
         if (toolchain.isDefault) append("default")
         if (toolchain.updateAvailable != null) {
@@ -799,29 +736,43 @@ private fun ToolchainRow(
         title = toolchain.name,
         description = description,
         content = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (toolchain.updateAvailable != null) {
-                    FilledTonalButton(onClick = onUpdate, enabled = enabled) {
-                        Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (toolchain.updateAvailable != null) {
+                        FilledTonalButton(
+                            onClick = { runOp(scope, logger, op, "rustup update ${toolchain.name}", onDone) { l, p -> rustup.updateToolchain(toolchain.name, l, p) } },
+                            enabled = enabled,
+                        ) {
+                            Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Update")
+                        }
+                    }
+                    if (!toolchain.isDefault) {
+                        OutlinedButton(
+                            onClick = { runOp(scope, logger, op, "rustup default ${toolchain.name}", onDone) { l, _ -> rustup.setDefaultToolchain(toolchain.name, l) } },
+                            enabled = enabled,
+                        ) {
+                            Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Set default")
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { runOp(scope, logger, op, "rustup toolchain uninstall ${toolchain.name}", onDone) { l, _ -> rustup.uninstallToolchain(toolchain.name, l) } },
+                        enabled = enabled,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Update")
+                        Text("Remove")
                     }
                 }
-                if (!toolchain.isDefault) {
-                    OutlinedButton(onClick = onSetDefault, enabled = enabled) {
-                        Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Set default")
-                    }
-                }
-                OutlinedButton(
-                    onClick = onUninstall,
-                    enabled = enabled,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Remove")
+                if (op.value != null) {
+                    OpProgressBar(
+                        progress = op.value,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
                 }
             }
         },
@@ -829,30 +780,48 @@ private fun ToolchainRow(
 }
 
 @Composable
-private fun InstallToolchainRow(enabled: Boolean, onInstall: (String) -> Unit) {
+private fun InstallToolchainRow(
+    rustup: RustupController,
+    scope: CoroutineScope,
+    logger: Logger,
+    onDone: suspend () -> Unit,
+) {
     var name by remember { mutableStateOf("") }
+    val op = remember { mutableStateOf<OpProgress?>(null) }
     SettingsCard(
         title = "Install a toolchain",
         content = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AppTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    placeholder = "stable, beta, nightly, 1.80.0...",
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(
-                    onClick = { if (name.isNotBlank()) { onInstall(name.trim()); name = "" } },
-                    enabled = enabled && name.isNotBlank(),
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Install")
+                    AppTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        placeholder = "stable, beta, nightly, 1.80.0...",
+                        enabled = op.value == null,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = {
+                            val target = name.trim()
+                            name = ""
+                            runOp(scope, logger, op, "rustup toolchain install $target", onDone) { l, p -> rustup.installToolchain(target, l, p) }
+                        },
+                        enabled = op.value == null && name.isNotBlank(),
+                    ) {
+                        Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Install")
+                    }
+                }
+                if (op.value != null) {
+                    OpProgressBar(
+                        progress = op.value,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
                 }
             }
         },
@@ -863,47 +832,70 @@ private fun InstallToolchainRow(enabled: Boolean, onInstall: (String) -> Unit) {
 private fun ComponentRow(
     id: String,
     installed: Boolean,
-    enabled: Boolean,
-    onToggle: (String, Boolean) -> Unit,
+    rustup: RustupController,
+    scope: CoroutineScope,
+    logger: Logger,
+    onDone: suspend () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            id,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (installed) FontWeight.SemiBold else FontWeight.Normal,
-        )
-        if (installed) {
-            OutlinedButton(
-                onClick = { onToggle(id, false) },
-                enabled = enabled,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) {
-                Icon(Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Remove")
+    val op = remember { mutableStateOf<OpProgress?>(null) }
+    val enabled = op.value == null
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                id,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (installed) FontWeight.SemiBold else FontWeight.Normal,
+            )
+            if (installed) {
+                OutlinedButton(
+                    onClick = { runOp(scope, logger, op, "rustup component remove $id", onDone) { l, _ -> rustup.removeComponent(id, l) } },
+                    enabled = enabled,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Remove")
+                }
+            } else {
+                Button(
+                    onClick = { runOp(scope, logger, op, "rustup component add $id", onDone) { l, p -> rustup.addComponent(id, l, p) } },
+                    enabled = enabled,
+                ) {
+                    Icon(Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Install")
+                }
             }
-        } else {
-            Button(onClick = { onToggle(id, true) }, enabled = enabled) {
-                Icon(Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Install")
-            }
+        }
+        if (op.value != null) {
+            OpProgressBar(
+                progress = op.value,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun TargetRow(target: String, enabled: Boolean, onRemove: () -> Unit) {
+private fun TargetRow(
+    target: String,
+    rustup: RustupController,
+    scope: CoroutineScope,
+    logger: Logger,
+    onDone: suspend () -> Unit,
+) {
+    val op = remember { mutableStateOf<OpProgress?>(null) }
     SettingsCard(
         title = target,
         trailing = {
             OutlinedButton(
-                onClick = onRemove,
-                enabled = enabled,
+                onClick = { runOp(scope, logger, op, "rustup target remove $target", onDone) { l, _ -> rustup.removeTarget(target, l) } },
+                enabled = op.value == null,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
                 Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -911,34 +903,60 @@ private fun TargetRow(target: String, enabled: Boolean, onRemove: () -> Unit) {
                 Text("Remove")
             }
         },
+        content = {
+            if (op.value != null) {
+                OpProgressBar(
+                    progress = op.value,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+            }
+        },
     )
 }
 
 @Composable
-private fun AddTargetRow(enabled: Boolean, onAdd: (String) -> Unit) {
+private fun AddTargetRow(
+    rustup: RustupController,
+    scope: CoroutineScope,
+    logger: Logger,
+    onDone: suspend () -> Unit,
+) {
     var target by remember { mutableStateOf("") }
+    val op = remember { mutableStateOf<OpProgress?>(null) }
     SettingsCard(
         title = "Add a target",
         content = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AppTextField(
-                    value = target,
-                    onValueChange = { target = it },
-                    placeholder = "e.g. wasm32-unknown-unknown",
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(
-                    onClick = { if (target.isNotBlank()) { onAdd(target.trim()); target = "" } },
-                    enabled = enabled && target.isNotBlank(),
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add")
+                    AppTextField(
+                        value = target,
+                        onValueChange = { target = it },
+                        placeholder = "e.g. wasm32-unknown-unknown",
+                        enabled = op.value == null,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = {
+                            val name = target.trim()
+                            target = ""
+                            runOp(scope, logger, op, "rustup target add $name", onDone) { l, p -> rustup.addTarget(name, l, p) }
+                        },
+                        enabled = op.value == null && target.isNotBlank(),
+                    ) {
+                        Icon(Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add")
+                    }
+                }
+                if (op.value != null) {
+                    OpProgressBar(
+                        progress = op.value,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
                 }
             }
         },

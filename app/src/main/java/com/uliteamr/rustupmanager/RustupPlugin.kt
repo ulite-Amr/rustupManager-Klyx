@@ -36,7 +36,9 @@ import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.settings.RustupSettingsContent
 import com.uliteamr.rustupmanager.settings.SettingsKeys
 import com.uliteamr.rustupmanager.ui.DashboardScreen
+import com.uliteamr.rustupmanager.ui.LspManager
 import com.uliteamr.rustupmanager.ui.LspScreen
+import com.uliteamr.rustupmanager.ui.LspVersionsScreen
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -46,6 +48,7 @@ import kotlinx.coroutines.launch
 
 private val DASHBOARD_SCREEN = ScreenId("com.uliteamr.rustupmanager.dashboard")
 private val LSP_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp")
+private val LSP_VERSIONS_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp.versions")
 private const val TOOLBAR_ACTION_ID = "com.uliteamr.rustupmanager.open"
 private const val LSP_PATTERN = "rs"
 private const val UPDATE_CHECK_LOOP_DELAY_HOURS = 6L
@@ -75,6 +78,7 @@ class RustupPlugin : KlyxPlugin {
     private val settings: PluginSettings by runtime()
 
     private val rustup = RustupController()
+    private val lspManager = LspManager(rustup)
     private var lspRegistration: LanguageServerRegistration? = null
     private var settingsRegistration: PluginSettingsRegistration? = null
     private var fileOpenedSubscription: EventSubscription? = null
@@ -85,7 +89,9 @@ class RustupPlugin : KlyxPlugin {
         screens[DASHBOARD_SCREEN] = {
             DashboardScreen(
                 rustup = rustup,
+                lspManager = lspManager,
                 onOpenLsp = { navigator.navigateTo(NavDestination.Custom(LSP_SCREEN)) },
+                onOpenVersions = { navigator.navigateTo(NavDestination.Custom(LSP_VERSIONS_SCREEN)) },
                 onOpenTerminal = { terminalManager.openTerminal() },
                 onBack = { navigator.navigateBack() },
             )
@@ -93,6 +99,10 @@ class RustupPlugin : KlyxPlugin {
 
         screens[LSP_SCREEN] = {
             LspScreen(settings = settings, onBack = { navigator.navigateBack() })
+        }
+
+        screens[LSP_VERSIONS_SCREEN] = {
+            LspVersionsScreen(lspManager = lspManager, onBack = { navigator.navigateBack() })
         }
 
         lspRegistration = languageServers.register(LSP_PATTERN, RustAnalyzerProvider(pluginScope, settings))
@@ -126,6 +136,7 @@ class RustupPlugin : KlyxPlugin {
         fileOpenedSubscription = null
         screens.unregister(DASHBOARD_SCREEN)
         screens.unregister(LSP_SCREEN)
+        screens.unregister(LSP_VERSIONS_SCREEN)
         toolbar.unregister(TOOLBAR_ACTION_ID)
         toolbarActionRegistered = false
         lspRegistration?.unregister()
@@ -137,6 +148,9 @@ class RustupPlugin : KlyxPlugin {
         val autoHide = settings.getBoolean(SettingsKeys.toolbarAutoHide, false)
         val show = !autoHide || hasRustContext()
         if (show && !toolbarActionRegistered) {
+            // The host's registry appends without dedup, so a stale entry from a previous
+            // registration would otherwise duplicate the icon; drop any leftovers first.
+            toolbar.unregister(TOOLBAR_ACTION_ID)
             toolbar.register(createToolbarAction())
             toolbarActionRegistered = true
         } else if (!show && toolbarActionRegistered) {

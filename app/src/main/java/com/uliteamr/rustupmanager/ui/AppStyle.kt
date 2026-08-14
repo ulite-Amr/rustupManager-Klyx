@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.uliteamr.rustupmanager.icons.ArrowBack
+import kotlin.math.roundToInt
 import com.uliteamr.rustupmanager.icons.Check
 import com.uliteamr.rustupmanager.icons.Close
 
@@ -230,6 +231,37 @@ fun ExpressiveLinearProgressIndicator(modifier: Modifier = Modifier) {
         strokeCap = StrokeCap.Round,
         modifier = modifier,
     )
+}
+
+/** Determinate (with %) or indeterminate progress bar used inside operation cards. */
+@Composable
+fun OpProgressBar(
+    progress: com.uliteamr.rustupmanager.rustup.OpProgress?,
+    modifier: Modifier = Modifier,
+) {
+    val fraction = progress?.fraction
+    Column(modifier = modifier) {
+        if (fraction != null) {
+            LinearProgressIndicator(
+                progress = { fraction.coerceIn(0f, 1f) },
+                strokeCap = StrokeCap.Round,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            ExpressiveLinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        Text(
+            text = if (fraction != null) {
+                "${(fraction * 100).roundToInt()}%"
+            } else {
+                progress?.label.orEmpty()
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+        )
+    }
 }
 
 @Composable

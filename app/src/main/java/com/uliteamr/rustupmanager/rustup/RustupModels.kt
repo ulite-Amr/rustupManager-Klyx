@@ -27,6 +27,12 @@ data class GithubRelease(
     val isNightly: Boolean,
 )
 
+/** Live progress of a single operation. [fraction] is 0..1, or null while indeterminate. */
+data class OpProgress(
+    val label: String,
+    val fraction: Float?,
+)
+
 data class LspState(
     val installedViaRustup: Boolean,
     val versions: List<ManagedLspVersion>,

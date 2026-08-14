@@ -23,6 +23,9 @@ private const val RA_DL_BASE = "https://github.com/rust-lang/rust-analyzer/relea
 private val TAG_NAME_RE = Regex(""""tag_name"\s*:\s*"([^"]+)"""")
 private val PRERELEASE_RE = Regex(""""prerelease"\s*:\s*(true|false)""")
 
+// " 89.5 MiB / 89.5 MiB (100.0 %)  54.6 KiB/s" (rustup) or curl's " 45.2 MiB 12.3 %" progress.
+private val PERCENT_RE = Regex("""(\d{1,3}(?:\.\d+)?)\s*%""")
+
 class RustupController {
 
     /** True while Klyx's PRoot Linux environment is bootstrapped (rootfs + .bootstrap-version). */
@@ -38,14 +41,14 @@ class RustupController {
         false
     }
 
-    suspend fun bootstrapInstall(onLine: (String) -> Unit): Boolean {
+    suspend fun bootstrapInstall(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean {
         val script = "curl --proto '=https' --tlsv1.2 -sSf $RUSTUP_INIT_URL | " +
             "sh -s -- -y --default-toolchain stable --profile default"
-        return runStreaming(BASH, arrayOf("-lc", script), onLine)
+        return runStreaming(BASH, arrayOf("-lc", script), onLine, onProgress)
     }
 
-    suspend fun resetInstall(onLine: (String) -> Unit): Boolean =
-        runStreaming(BASH, arrayOf("-lc", "rm -rf /root/.rustup /root/.cargo"), onLine)
+    suspend fun resetInstall(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runStreaming(BASH, arrayOf("-lc", "rm -rf /root/.rustup /root/.cargo"), onLine, onProgress)
 
     suspend fun listToolchains(): List<Toolchain> {
         val result = command(RUSTUP, "toolchain", "list").output()
@@ -80,8 +83,8 @@ class RustupController {
         return updates
     }
 
-    suspend fun installToolchain(name: String, onLine: (String) -> Unit): Boolean =
-        runRustup("toolchain", "install", name, onLine = onLine)
+    suspend fun installToolchain(name: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runRustup("toolchain", "install", name, onLine = onLine, onProgress = onProgress)
 
     suspend fun uninstallToolchain(name: String, onLine: (String) -> Unit): Boolean =
         runRustup("toolchain", "uninstall", name, onLine = onLine)
@@ -89,8 +92,8 @@ class RustupController {
     suspend fun setDefaultToolchain(name: String, onLine: (String) -> Unit): Boolean =
         runRustup("default", name, onLine = onLine)
 
-    suspend fun updateToolchain(name: String, onLine: (String) -> Unit): Boolean =
-        runRustup("update", name, onLine = onLine)
+    suspend fun updateToolchain(name: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runRustup("update", name, onLine = onLine, onProgress = onProgress)
 
     suspend fun componentState(): ComponentState {
         val result = command(RUSTUP, "component", "list", "--installed").output()
@@ -103,8 +106,8 @@ class RustupController {
         )
     }
 
-    suspend fun addComponent(component: String, onLine: (String) -> Unit): Boolean =
-        runRustup("component", "add", component, onLine = onLine)
+    suspend fun addComponent(component: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runRustup("component", "add", component, onLine = onLine, onProgress = onProgress)
 
     suspend fun removeComponent(component: String, onLine: (String) -> Unit): Boolean =
         runRustup("component", "remove", component, onLine = onLine)
@@ -115,14 +118,14 @@ class RustupController {
         return result.stdoutLines.filter { it.isNotBlank() }
     }
 
-    suspend fun addTarget(target: String, onLine: (String) -> Unit): Boolean =
-        runRustup("target", "add", target, onLine = onLine)
+    suspend fun addTarget(target: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runRustup("target", "add", target, onLine = onLine, onProgress = onProgress)
 
     suspend fun removeTarget(target: String, onLine: (String) -> Unit): Boolean =
         runRustup("target", "remove", target, onLine = onLine)
 
-    suspend fun updateAll(onLine: (String) -> Unit): Boolean =
-        runRustup("update", onLine = onLine)
+    suspend fun updateAll(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runRustup("update", onLine = onLine, onProgress = onProgress)
 
     // --- rust-analyzer: source-independent by design ---
     // Klyx resolves a bare command name against the rootfs's own PATH (including whatever
@@ -143,8 +146,8 @@ class RustupController {
         return LspState(installedViaRustup = viaRustup, versions = versions, activeVersion = active)
     }
 
-    suspend fun installLspViaRustup(onLine: (String) -> Unit): Boolean =
-        runRustup("component", "add", "rust-analyzer", onLine = onLine)
+    suspend fun installLspViaRustup(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runRustup("component", "add", "rust-analyzer", onLine = onLine, onProgress = onProgress)
 
     suspend fun removeLspViaRustup(onLine: (String) -> Unit): Boolean =
         runRustup("component", "remove", "rust-analyzer", onLine = onLine)
@@ -184,7 +187,7 @@ class RustupController {
     }
 
     /** Installs a specific release tag (from [githubReleases] or [githubLatestTag]) and activates it. */
-    suspend fun installLspViaGithub(tag: String, onLine: (String) -> Unit): Boolean {
+    suspend fun installLspViaGithub(tag: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean {
         val arch = githubArch()
         if (arch == null) {
             onLine("error: unsupported device architecture for rust-analyzer downloads")
@@ -194,14 +197,14 @@ class RustupController {
             set -e
             mkdir -p $RA_SHARE_DIR/$tag $RA_BIN_DIR
             echo "downloading rust-analyzer $tag ($arch) from github.com/rust-lang/rust-analyzer ..."
-            curl -fsSL --max-time 90 -o /tmp/rust-analyzer-$tag.gz '$RA_DL_BASE/$tag/rust-analyzer-$arch-unknown-linux-gnu.gz'
+            curl -fL --progress-bar --max-time 90 -o /tmp/rust-analyzer-$tag.gz '$RA_DL_BASE/$tag/rust-analyzer-$arch-unknown-linux-gnu.gz'
             gunzip -c /tmp/rust-analyzer-$tag.gz > $RA_SHARE_DIR/$tag/rust-analyzer
             chmod +x $RA_SHARE_DIR/$tag/rust-analyzer
             ln -sfn ../share/rust-analyzer/$tag/rust-analyzer $RA_BIN_LINK
             rm -f /tmp/rust-analyzer-$tag.gz
             echo "rust-analyzer $tag installed and activated"
         """.trimIndent()
-        return runStreaming(BASH, arrayOf("-lc", script), onLine)
+        return runStreaming(BASH, arrayOf("-lc", script), onLine, onProgress)
     }
 
     /** Points the active `rust-analyzer` (resolved as a bare name via ~/.local/bin) at [tag]. */
@@ -248,20 +251,36 @@ class RustupController {
         }
     }
 
-    private suspend fun runRustup(vararg args: String, onLine: (String) -> Unit): Boolean =
-        runStreaming(RUSTUP, arrayOf(*args), onLine)
+    private suspend fun runRustup(vararg args: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+        runStreaming(RUSTUP, arrayOf(*args), onLine, onProgress)
 
-    private suspend fun runStreaming(program: String, args: Array<String>, onLine: (String) -> Unit): Boolean {
+    private suspend fun runStreaming(
+        program: String,
+        args: Array<String>,
+        onLine: (String) -> Unit,
+        onProgress: (Float?) -> Unit = {},
+    ): Boolean {
         var success = false
         var exitCode = -1
         val stderrTail = mutableListOf<String>()
         try {
             command(program, *args).stream().collect { event ->
                 when (event) {
-                    is ProcessEvent.Stdout -> emitLines(event.text, onLine)
-                    is ProcessEvent.Stderr -> {
+                    is ProcessEvent.Stdout -> {
                         emitLines(event.text, onLine)
-                        val trimmed = event.text.trim()
+                        emitProgress(event.text, onProgress)
+                    }
+                    is ProcessEvent.Stderr -> {
+                        val text = event.text
+                        if (text.contains('\r')) {
+                            // curl's --progress-bar writes \r-updated progress; surface only the
+                            // percentage instead of flooding the log with every redraw.
+                            emitProgress(text, onProgress)
+                        } else {
+                            emitLines(text, onLine)
+                            emitProgress(text, onProgress)
+                        }
+                        val trimmed = text.trim()
                         if (trimmed.isNotEmpty()) {
                             stderrTail.add(trimmed)
                             if (stderrTail.size > MAX_STDERR_TAIL) stderrTail.removeAt(0)
@@ -281,6 +300,19 @@ class RustupController {
             diagnosticHint(stderrTail, exitCode)?.let { onLine("hint: $it") }
         }
         return success
+    }
+
+    /** Parses the last percentage in a chunk (rustup "(100.0 %)" or curl "12.3 %") and forwards it. */
+    private fun emitProgress(chunk: String, onProgress: (Float?) -> Unit) {
+        var fraction: Float? = null
+        for (segment in chunk.split('\r')) {
+            PERCENT_RE.find(segment)?.let { m ->
+                m.groupValues[1].toFloatOrNull()?.let { value ->
+                    fraction = (value / 100f).coerceIn(0f, 1f)
+                }
+            }
+        }
+        fraction?.let(onProgress)
     }
 
     /** Maps a failed command's stderr to a short, actionable hint (or the last stderr line). */
