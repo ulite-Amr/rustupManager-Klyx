@@ -19,7 +19,7 @@ import com.klyx.api.plugin.pluginScope
 import com.klyx.api.plugin.runtime
 import com.klyx.api.plugin.showToast
 import com.klyx.api.service.Tabs
-import com.klyx.api.terminal.TerminalManager
+import com.klyx.api.data.terminal.TerminalManager
 import com.klyx.api.ui.ScreenId
 import com.klyx.api.ui.ScreenRegistry
 import com.klyx.api.ui.ToolbarAction
