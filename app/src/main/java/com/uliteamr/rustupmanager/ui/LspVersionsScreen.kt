@@ -137,23 +137,23 @@ fun ReleaseVersionRow(lspManager: LspManager, release: GithubRelease) {
             }
             when {
                 managed?.isActive == true -> OutlinedButton(
-                    onClick = { scope.launch { log(lspManager.remove(release.tag)) { logger.info(LOG_TAG, it) } } },
+                    onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.remove(tag, onLine) } } },
                     enabled = !busy,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) { Text("Remove") }
                 managed != null -> {
                     FilledTonalButton(
-                        onClick = { scope.launch { log(lspManager.use(release.tag)) { logger.info(LOG_TAG, it) } } },
+                        onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.use(tag, onLine) } } },
                         enabled = !busy,
                     ) { Text("Use") }
                     OutlinedButton(
-                        onClick = { scope.launch { log(lspManager.remove(release.tag)) { logger.info(LOG_TAG, it) } } },
+                        onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.remove(tag, onLine) } } },
                         enabled = !busy,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     ) { Text("Remove") }
                 }
                 else -> Button(
-                    onClick = { scope.launch { log(lspManager.install(release.tag)) { logger.info(LOG_TAG, it) } } },
+                    onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.install(tag, onLine) } } },
                     enabled = !busy,
                 ) {
                     Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -171,6 +171,12 @@ fun ReleaseVersionRow(lspManager: LspManager, release: GithubRelease) {
     }
 }
 
-private suspend fun log(result: Boolean, onLine: (String) -> Unit) {
-    if (!result) onLine("operation failed (see log above)")
+private suspend fun runManaged(
+    lspManager: LspManager,
+    logger: Logger,
+    tag: String,
+    action: suspend (tag: String, onLine: (String) -> Unit) -> Boolean,
+) {
+    val ok = action(tag) { logger.info(LOG_TAG, it) }
+    if (!ok) logger.info(LOG_TAG, "operation failed (see log above)")
 }

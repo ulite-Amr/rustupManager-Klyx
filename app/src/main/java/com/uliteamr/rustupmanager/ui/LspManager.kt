@@ -50,16 +50,16 @@ class LspManager(private val rustup: RustupController) {
         runOp("lsp:rustup:install", "Install rust-analyzer via rustup", onLine) { l, p -> rustup.installLspViaRustup(l, p) }
 
     suspend fun removeViaRustup(onLine: (String) -> Unit): Boolean =
-        runOp("lsp:rustup:remove", "Remove rust-analyzer via rustup", onLine) { l, p -> rustup.removeLspViaRustup(l, p) }
+        runOp("lsp:rustup:remove", "Remove rust-analyzer via rustup", onLine) { l, _ -> rustup.removeLspViaRustup(l) }
 
     suspend fun install(tag: String, onLine: (String) -> Unit): Boolean =
         runOp("lsp:install:$tag", "Install rust-analyzer $tag", onLine) { l, p -> rustup.installLspViaGithub(tag, l, p) }
 
     suspend fun use(tag: String, onLine: (String) -> Unit): Boolean =
-        runOp("lsp:use:$tag", "Activate rust-analyzer $tag", onLine) { l, p -> rustup.useManagedLsp(tag, l, p) }
+        runOp("lsp:use:$tag", "Activate rust-analyzer $tag", onLine) { l, _ -> rustup.useManagedLsp(tag, l) }
 
     suspend fun remove(tag: String, onLine: (String) -> Unit): Boolean =
-        runOp("lsp:remove:$tag", "Remove rust-analyzer $tag", onLine) { l, p -> rustup.removeManagedLsp(tag, l, p) }
+        runOp("lsp:remove:$tag", "Remove rust-analyzer $tag", onLine) { l, _ -> rustup.removeManagedLsp(tag, l) }
 
     private suspend fun runOp(
         key: String,

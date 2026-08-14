@@ -380,9 +380,9 @@ private fun ReadyBody(
         item {
             SettingsCard {
                 Column {
-                    ComponentRow("clippy", components.clippy, rustup, scope, logger, reloadComponents)
-                    ComponentRow("rustfmt", components.rustfmt, rustup, scope, logger, reloadComponents)
-                    ComponentRow("rust-src", components.rustSrc, rustup, scope, logger, reloadComponents)
+                    ComponentRow("clippy", components.clippy, rustup, scope, logger, { reloadComponents() })
+                    ComponentRow("rustfmt", components.rustfmt, rustup, scope, logger, { reloadComponents() })
+                    ComponentRow("rust-src", components.rustSrc, rustup, scope, logger, { reloadComponents() })
                 }
             }
         }
