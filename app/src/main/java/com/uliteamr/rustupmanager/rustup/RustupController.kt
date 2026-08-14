@@ -1,14 +1,25 @@
 package com.uliteamr.rustupmanager.rustup
 
+import com.klyx.api.data.fs.Paths
 import com.klyx.api.system.ProcessEvent
 import com.klyx.api.system.command
+import com.klyx.api.terminal.rootFs
+import com.klyx.api.terminal.versionFile
 import kotlinx.coroutines.flow.collect
 
 private const val RUSTUP = "/root/.cargo/bin/rustup"
 private const val BASH = "/bin/bash"
 private const val RUSTUP_INIT_URL = "https://sh.rustup.rs"
+private const val MAX_STDERR_TAIL = 5
 
 class RustupController {
+
+    /** True while Klyx's PRoot Linux environment is bootstrapped (rootfs + .bootstrap-version). */
+    suspend fun linuxEnvironmentReady(): Boolean = try {
+        Paths.rootFs.exists() && Paths.versionFile.exists()
+    } catch (_: Throwable) {
+        false
+    }
 
     suspend fun isInstalled(): Boolean = try {
         command(RUSTUP, "--version").output().exitCode == 0
@@ -127,6 +138,7 @@ class RustupController {
         runStreaming(BASH, arrayOf("-lc", "apt-get remove -y rust-analyzer"), onLine)
 
     suspend fun loadState(): RustupState {
+        if (!linuxEnvironmentReady()) return RustupState.EnvironmentMissing
         if (!isInstalled()) return RustupState.NotInstalled
         return try {
             RustupState.Ready(
@@ -145,14 +157,51 @@ class RustupController {
 
     private suspend fun runStreaming(program: String, args: Array<String>, onLine: (String) -> Unit): Boolean {
         var success = false
-        command(program, *args).stream().collect { event ->
-            when (event) {
-                is ProcessEvent.Stdout -> emitLines(event.text, onLine)
-                is ProcessEvent.Stderr -> emitLines(event.text, onLine)
-                is ProcessEvent.ExitCode -> success = event.code == 0
+        var exitCode = -1
+        val stderrTail = mutableListOf<String>()
+        try {
+            command(program, *args).stream().collect { event ->
+                when (event) {
+                    is ProcessEvent.Stdout -> emitLines(event.text, onLine)
+                    is ProcessEvent.Stderr -> {
+                        emitLines(event.text, onLine)
+                        val trimmed = event.text.trim()
+                        if (trimmed.isNotEmpty()) {
+                            stderrTail.add(trimmed)
+                            if (stderrTail.size > MAX_STDERR_TAIL) stderrTail.removeAt(0)
+                        }
+                    }
+                    is ProcessEvent.ExitCode -> {
+                        success = event.code == 0
+                        exitCode = event.code
+                    }
+                }
             }
+        } catch (e: Exception) {
+            onLine("error: ${e.message ?: "command failed to start"}")
+            return false
+        }
+        if (!success) {
+            diagnosticHint(stderrTail, exitCode)?.let { onLine("hint: $it") }
         }
         return success
+    }
+
+    /** Maps a failed command's stderr to a short, actionable hint (or the last stderr line). */
+    private fun diagnosticHint(stderrTail: List<String>, exitCode: Int): String? {
+        val joined = stderrTail.joinToString(" ").lowercase()
+        val lastLine = stderrTail.lastOrNull()?.trim().orEmpty()
+        return when {
+            exitCode == 126 || exitCode == 127 ->
+                "command not found inside the Klyx Linux environment"
+            "curl: (6)" in joined || "curl: (7)" in joined || "could not resolve" in joined ||
+                "failed to connect" in joined || "connection timed out" in joined ->
+                "network problem while downloading — check your connection"
+            "no such file or directory" in joined ->
+                "a required file is missing inside the Linux environment"
+            joined.isNotBlank() -> lastLine.take(160).ifBlank { null }
+            else -> null
+        }
     }
 
     private fun emitLines(chunk: String, onLine: (String) -> Unit) {

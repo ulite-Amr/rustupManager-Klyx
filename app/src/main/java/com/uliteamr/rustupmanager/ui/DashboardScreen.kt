@@ -1,15 +1,30 @@
 package com.uliteamr.rustupmanager.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -24,8 +39,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.uliteamr.rustupmanager.icons.Add
+import com.uliteamr.rustupmanager.icons.Check
+import com.uliteamr.rustupmanager.icons.Delete
+import com.uliteamr.rustupmanager.icons.Download
+import com.uliteamr.rustupmanager.icons.Info
+import com.uliteamr.rustupmanager.icons.Refresh
 import com.uliteamr.rustupmanager.icons.Server
+import com.uliteamr.rustupmanager.icons.Terminal
+import com.uliteamr.rustupmanager.icons.Warning
 import com.uliteamr.rustupmanager.rustup.LspSource
 import com.uliteamr.rustupmanager.rustup.LspState
 import com.uliteamr.rustupmanager.rustup.RustupController
@@ -37,6 +63,7 @@ import kotlinx.coroutines.launch
 fun DashboardScreen(
     rustup: RustupController,
     onOpenLsp: () -> Unit,
+    onOpenTerminal: () -> Unit,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -55,57 +82,92 @@ fun DashboardScreen(
             busy = true
             logLines.clear()
             logLines.add("$ $label")
-            val ok = action { line -> logLines.add(line) }
-            logLines.add(if (ok) "done" else "failed (see log above)")
-            busy = false
-            refresh()
+            try {
+                val ok = action { line -> logLines.add(line) }
+                logLines.add(if (ok) "done" else "failed (see log above)")
+            } catch (e: Exception) {
+                logLines.add("error: ${e.message ?: "unexpected failure"}")
+            } finally {
+                busy = false
+                refresh()
+            }
         }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        ScreenHeader(title = "Rust Toolchain", onBack = onBack)
+        ScreenHeader(
+            title = "Rust Toolchain",
+            onBack = onBack,
+            trailing = {
+                IconButton(
+                    onClick = { scope.launch { refresh() } },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                ) {
+                    Icon(Refresh, contentDescription = "Refresh")
+                }
+            },
+        )
 
-        when (val current = state) {
-            RustupState.Checking -> CheckingBody()
-            RustupState.NotInstalled -> NotInstalledBody(
-                busy = busy,
-                logLines = logLines,
-                onInstall = { runAction("rustup-init") { onLine -> rustup.bootstrapInstall(onLine) } },
-                onReset = { runAction("reset rustup state") { onLine -> rustup.resetInstall(onLine) } },
-            )
-            is RustupState.Error -> ErrorBody(current.message) { scope.launch { refresh() } }
-            RustupState.Installing -> CheckingBody()
-            is RustupState.Ready -> ReadyBody(
-                state = current,
-                busy = busy,
-                logLines = logLines,
-                onOpenLsp = onOpenLsp,
-                onSetDefault = { name -> runAction("rustup default $name") { onLine -> rustup.setDefaultToolchain(name, onLine) } },
-                onUninstallToolchain = { name -> runAction("rustup toolchain uninstall $name") { onLine -> rustup.uninstallToolchain(name, onLine) } },
-                onInstallToolchain = { name -> runAction("rustup toolchain install $name") { onLine -> rustup.installToolchain(name, onLine) } },
-                onUpdateToolchain = { name -> runAction("rustup update $name") { onLine -> rustup.updateToolchain(name, onLine) } },
-                onToggleComponent = { component, enable ->
-                    val label = if (enable) "rustup component add $component" else "rustup component remove $component"
-                    runAction(label) { onLine ->
-                        if (enable) rustup.addComponent(component, onLine) else rustup.removeComponent(component, onLine)
-                    }
-                },
-                onRemoveTarget = { target -> runAction("rustup target remove $target") { onLine -> rustup.removeTarget(target, onLine) } },
-                onAddTarget = { target -> runAction("rustup target add $target") { onLine -> rustup.addTarget(target, onLine) } },
-                onUpdateAll = { runAction("rustup update") { onLine -> rustup.updateAll(onLine) } },
-                onInstallLsp = { source ->
-                    val label = if (source == LspSource.Rustup) "rustup component add rust-analyzer" else "apt-get install rust-analyzer"
-                    runAction(label) { onLine ->
-                        if (source == LspSource.Rustup) rustup.installLspViaRustup(onLine) else rustup.installLspViaApt(onLine)
-                    }
-                },
-                onRemoveLsp = { source ->
-                    val label = if (source == LspSource.Rustup) "rustup component remove rust-analyzer" else "apt-get remove rust-analyzer"
-                    runAction(label) { onLine ->
-                        if (source == LspSource.Rustup) rustup.removeLspViaRustup(onLine) else rustup.removeLspViaApt(onLine)
-                    }
-                },
-            )
+        val motion = MaterialTheme.motionScheme
+        AnimatedContent(
+            targetState = state,
+            transitionSpec = {
+                val fadeSpec = motion.fastSpatialSpec<Float>()
+                val slideSpec = motion.defaultSpatialSpec<IntOffset>()
+                (fadeIn(fadeSpec) + slideInVertically(slideSpec) { it / 12 }).togetherWith(
+                    fadeOut(fadeSpec) + slideOutVertically(slideSpec) { -it / 12 },
+                )
+            },
+            label = "rustup-state",
+        ) { current ->
+            when (current) {
+                RustupState.Checking -> CheckingBody()
+                RustupState.Installing -> CheckingBody()
+                RustupState.EnvironmentMissing -> EnvironmentMissingBody(
+                    onOpenTerminal = onOpenTerminal,
+                    onRetry = { scope.launch { refresh() } },
+                )
+                RustupState.NotInstalled -> NotInstalledBody(
+                    busy = busy,
+                    logLines = logLines,
+                    onInstall = { runAction("rustup-init") { onLine -> rustup.bootstrapInstall(onLine) } },
+                    onReset = { runAction("reset rustup state") { onLine -> rustup.resetInstall(onLine) } },
+                )
+                is RustupState.Error -> ErrorBody(current.message) { scope.launch { refresh() } }
+                is RustupState.Ready -> ReadyBody(
+                    state = current,
+                    busy = busy,
+                    logLines = logLines,
+                    onOpenLsp = onOpenLsp,
+                    onSetDefault = { name -> runAction("rustup default $name") { onLine -> rustup.setDefaultToolchain(name, onLine) } },
+                    onUninstallToolchain = { name -> runAction("rustup toolchain uninstall $name") { onLine -> rustup.uninstallToolchain(name, onLine) } },
+                    onInstallToolchain = { name -> runAction("rustup toolchain install $name") { onLine -> rustup.installToolchain(name, onLine) } },
+                    onUpdateToolchain = { name -> runAction("rustup update $name") { onLine -> rustup.updateToolchain(name, onLine) } },
+                    onToggleComponent = { component, enable ->
+                        val label = if (enable) "rustup component add $component" else "rustup component remove $component"
+                        runAction(label) { onLine ->
+                            if (enable) rustup.addComponent(component, onLine) else rustup.removeComponent(component, onLine)
+                        }
+                    },
+                    onRemoveTarget = { target -> runAction("rustup target remove $target") { onLine -> rustup.removeTarget(target, onLine) } },
+                    onAddTarget = { target -> runAction("rustup target add $target") { onLine -> rustup.addTarget(target, onLine) } },
+                    onUpdateAll = { runAction("rustup update") { onLine -> rustup.updateAll(onLine) } },
+                    onInstallLsp = { source ->
+                        val label = if (source == LspSource.Rustup) "rustup component add rust-analyzer" else "apt-get install rust-analyzer"
+                        runAction(label) { onLine ->
+                            if (source == LspSource.Rustup) rustup.installLspViaRustup(onLine) else rustup.installLspViaApt(onLine)
+                        }
+                    },
+                    onRemoveLsp = { source ->
+                        val label = if (source == LspSource.Rustup) "rustup component remove rust-analyzer" else "apt-get remove rust-analyzer"
+                        runAction(label) { onLine ->
+                            if (source == LspSource.Rustup) rustup.removeLspViaRustup(onLine) else rustup.removeLspViaApt(onLine)
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -117,17 +179,77 @@ private fun CheckingBody() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        InlineSpinner()
-        Text("Checking rustup...", modifier = Modifier.padding(top = 12.dp))
+        InlineSpinner(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+        Text("Checking rustup...", modifier = Modifier.padding(top = 16.dp))
+    }
+}
+
+@Composable
+private fun EnvironmentMissingBody(
+    onOpenTerminal: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        ExpressiveIconChip(icon = Terminal)
+        Text(
+            "Klyx Linux environment is not installed",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            "Rustup Manager runs inside Klyx's built-in Linux environment (PRoot). " +
+                "Open the terminal to finish the setup, then come back here.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Button(onClick = onOpenTerminal, modifier = Modifier.padding(top = 20.dp)) {
+            Icon(Terminal, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Open terminal")
+        }
+        TextButton(onClick = onRetry) { Text("Check again") }
     }
 }
 
 @Composable
 private fun ErrorBody(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.padding(20.dp)) {
-        Text("Something went wrong", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
-        Text(message, modifier = Modifier.padding(top = 4.dp))
-        Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) { Text("Retry") }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        ExpressiveIconChip(
+            icon = Warning,
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        Text(
+            "Something went wrong",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Button(onClick = onRetry, modifier = Modifier.padding(top = 20.dp)) {
+            Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Retry")
+        }
     }
 }
 
@@ -140,19 +262,31 @@ private fun NotInstalledBody(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         SettingsCard(
+            icon = Download,
             title = "rustup is not installed",
             description = "This installs rustup and a default stable toolchain inside Klyx's built-in Linux environment.",
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(onClick = onInstall, enabled = !busy, modifier = Modifier.weight(1f)) {
+                Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(if (busy) "Working..." else "Install rustup")
             }
             OutlinedButton(onClick = onReset, enabled = !busy) {
+                Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
                 Text("Reset & retry")
             }
+        }
+        if (busy) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+            )
         }
         Text(
             "If a previous attempt failed partway, \"Reset & retry\" clears the leftover rustup state "
@@ -187,6 +321,16 @@ private fun ReadyBody(
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
+            if (busy) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+        }
+
+        item {
             LspSourceCard(
                 lsp = state.lsp,
                 selected = lspSource,
@@ -199,14 +343,24 @@ private fun ReadyBody(
         }
 
         item { SectionLabel("Toolchains") }
-        items(state.toolchains) { toolchain ->
-            ToolchainRow(
-                toolchain = toolchain,
-                enabled = !busy,
-                onSetDefault = { onSetDefault(toolchain.name) },
-                onUninstall = { onUninstallToolchain(toolchain.name) },
-                onUpdate = { onUpdateToolchain(toolchain.name) },
-            )
+        if (state.toolchains.isEmpty()) {
+            item {
+                SettingsCard(
+                    icon = Info,
+                    title = "No toolchains installed",
+                    description = "Install one below — try stable, beta or nightly.",
+                )
+            }
+        } else {
+            items(state.toolchains) { toolchain ->
+                ToolchainRow(
+                    toolchain = toolchain,
+                    enabled = !busy,
+                    onSetDefault = { onSetDefault(toolchain.name) },
+                    onUninstall = { onUninstallToolchain(toolchain.name) },
+                    onUpdate = { onUpdateToolchain(toolchain.name) },
+                )
+            }
         }
         item { InstallToolchainRow(enabled = !busy, onInstall = onInstallToolchain) }
 
@@ -222,8 +376,18 @@ private fun ReadyBody(
         }
 
         item { SectionLabel("Targets") }
-        items(state.activeTargets) { target ->
-            TargetRow(target = target, enabled = !busy, onRemove = { onRemoveTarget(target) })
+        if (state.activeTargets.isEmpty()) {
+            item {
+                SettingsCard(
+                    icon = Info,
+                    title = "No extra targets",
+                    description = "Your toolchain compiles for the host platform only.",
+                )
+            }
+        } else {
+            items(state.activeTargets) { target ->
+                TargetRow(target = target, enabled = !busy, onRemove = { onRemoveTarget(target) })
+            }
         }
         item { AddTargetRow(enabled = !busy, onAdd = onAddTarget) }
 
@@ -231,8 +395,12 @@ private fun ReadyBody(
             OutlinedButton(
                 onClick = onUpdateAll,
                 enabled = !busy,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
+                Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
                 Text("Update all toolchains")
             }
         }
@@ -269,19 +437,29 @@ private fun LspSourceCard(
         trailing = { TextButton(onClick = onOpenLogs) { Text("Logs") } },
         content = {
             Column {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillButton(text = "rustup", selected = selected == LspSource.Rustup, enabled = !busy, onClick = { onSelect(LspSource.Rustup) })
-                    PillButton(text = "apt", selected = selected == LspSource.Apt, enabled = !busy, onClick = { onSelect(LspSource.Apt) })
-                }
-                Row(modifier = Modifier.padding(top = 10.dp)) {
+                SegmentedChoice(
+                    options = listOf("rustup", "apt"),
+                    selected = selected.name.lowercase(),
+                    enabled = !busy,
+                    onSelect = { onSelect(if (it == "apt") LspSource.Apt else LspSource.Rustup) },
+                )
+                Row(modifier = Modifier.padding(top = 12.dp)) {
                     if (installedForSelected) {
                         OutlinedButton(
                             onClick = onRemove,
                             enabled = !busy,
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        ) { Text("Remove (${selected.name.lowercase()})") }
+                        ) {
+                            Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Remove (${selected.name.lowercase()})")
+                        }
                     } else {
-                        Button(onClick = onInstall, enabled = !busy) { Text("Install via ${selected.name.lowercase()}") }
+                        Button(onClick = onInstall, enabled = !busy) {
+                            Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Install via ${selected.name.lowercase()}")
+                        }
                     }
                 }
             }
@@ -318,16 +496,28 @@ private fun ToolchainRow(
         content = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (toolchain.updateAvailable != null) {
-                    Button(onClick = onUpdate, enabled = enabled) { Text("Update") }
+                    FilledTonalButton(onClick = onUpdate, enabled = enabled) {
+                        Icon(Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Update")
+                    }
                 }
                 if (!toolchain.isDefault) {
-                    OutlinedButton(onClick = onSetDefault, enabled = enabled) { Text("Set default") }
+                    OutlinedButton(onClick = onSetDefault, enabled = enabled) {
+                        Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Set default")
+                    }
                 }
                 OutlinedButton(
                     onClick = onUninstall,
                     enabled = enabled,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("Remove") }
+                ) {
+                    Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Remove")
+                }
             }
         },
     )
@@ -354,7 +544,11 @@ private fun InstallToolchainRow(enabled: Boolean, onInstall: (String) -> Unit) {
                 Button(
                     onClick = { if (name.isNotBlank()) { onInstall(name.trim()); name = "" } },
                     enabled = enabled && name.isNotBlank(),
-                ) { Text("Install") }
+                ) {
+                    Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Install")
+                }
             }
         },
     )
@@ -372,15 +566,27 @@ private fun ComponentRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(id, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            id,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (installed) FontWeight.SemiBold else FontWeight.Normal,
+        )
         if (installed) {
             OutlinedButton(
                 onClick = { onToggle(id, false) },
                 enabled = enabled,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Remove") }
+            ) {
+                Icon(Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Remove")
+            }
         } else {
-            Button(onClick = { onToggle(id, true) }, enabled = enabled) { Text("Install") }
+            Button(onClick = { onToggle(id, true) }, enabled = enabled) {
+                Icon(Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Install")
+            }
         }
     }
 }
@@ -394,7 +600,11 @@ private fun TargetRow(target: String, enabled: Boolean, onRemove: () -> Unit) {
                 onClick = onRemove,
                 enabled = enabled,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Remove") }
+            ) {
+                Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Remove")
+            }
         },
     )
 }
@@ -420,7 +630,11 @@ private fun AddTargetRow(enabled: Boolean, onAdd: (String) -> Unit) {
                 Button(
                     onClick = { if (target.isNotBlank()) { onAdd(target.trim()); target = "" } },
                     enabled = enabled && target.isNotBlank(),
-                ) { Text("Add") }
+                ) {
+                    Icon(Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add")
+                }
             }
         },
     )

@@ -19,6 +19,7 @@ import com.klyx.api.plugin.pluginScope
 import com.klyx.api.plugin.runtime
 import com.klyx.api.plugin.showToast
 import com.klyx.api.service.Tabs
+import com.klyx.api.terminal.TerminalManager
 import com.klyx.api.ui.ScreenId
 import com.klyx.api.ui.ScreenRegistry
 import com.klyx.api.ui.ToolbarAction
@@ -51,6 +52,7 @@ private const val UPDATE_CHECK_LOOP_DELAY_HOURS = 6L
 @PluginManifest(
     id = "com.uliteamr.rustupmanager",
     name = "Rustup Manager",
+    version = "1.1.0",
     description = "Full Rust toolchain manager built on rustup: install and switch toolchains, manage components and targets, and get rust-analyzer wired up as a language server automatically.",
     icon = "icon.png",
     author = Author(name = "uliteamr"),
@@ -63,6 +65,7 @@ class RustupPlugin : KlyxPlugin {
     private val navigator: Navigator by plugin()
     private val languageServers: LanguageServerRegistry by plugin()
     private val settingsRegistry: PluginSettingsRegistry by plugin()
+    private val terminalManager: TerminalManager by plugin()
     private val tabs: Tabs by plugin()
     private val settings: PluginSettings by runtime()
 
@@ -78,6 +81,7 @@ class RustupPlugin : KlyxPlugin {
             DashboardScreen(
                 rustup = rustup,
                 onOpenLsp = { navigator.navigateTo(NavDestination.Custom(LSP_SCREEN)) },
+                onOpenTerminal = { terminalManager.openTerminal() },
                 onBack = { navigator.navigateBack() },
             )
         }
@@ -191,7 +195,11 @@ class RustupPlugin : KlyxPlugin {
 
     private suspend fun autoUpdateLoop() {
         while (true) {
-            checkForUpdateIfDue()
+            try {
+                checkForUpdateIfDue()
+            } catch (e: Exception) {
+                // A failed background check must never take down the plugin scope.
+            }
             delay(UPDATE_CHECK_LOOP_DELAY_HOURS * 60 * 60 * 1000L)
         }
     }

@@ -1,23 +1,18 @@
 package com.uliteamr.rustupmanager.settings
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.klyx.api.plugin.PluginSettings
 import com.uliteamr.rustupmanager.icons.Clock
 import com.uliteamr.rustupmanager.icons.Layers
 import com.uliteamr.rustupmanager.icons.Refresh
 import com.uliteamr.rustupmanager.ui.AppSwitch
-import com.uliteamr.rustupmanager.ui.PillButton
+import com.uliteamr.rustupmanager.ui.SegmentedChoice
 import com.uliteamr.rustupmanager.ui.SettingsCard
 import kotlinx.coroutines.launch
 
@@ -38,21 +33,14 @@ fun PluginSettings.RustupSettingsContent() {
             title = "Toolchain channel",
             description = "Used when installing a new toolchain from the dashboard",
             content = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    TOOLCHAINS.forEach { channel ->
-                        PillButton(
-                            text = channel,
-                            selected = defaultChannel == channel,
-                            onClick = {
-                                defaultChannel = channel
-                                scope.launch { putString(SettingsKeys.defaultChannel, channel) }
-                            },
-                        )
-                    }
-                }
+                SegmentedChoice(
+                    options = TOOLCHAINS,
+                    selected = defaultChannel,
+                    onSelect = { channel ->
+                        defaultChannel = channel
+                        scope.launch { putString(SettingsKeys.defaultChannel, channel) }
+                    },
+                )
             },
         )
 
@@ -76,21 +64,15 @@ fun PluginSettings.RustupSettingsContent() {
                 icon = Clock,
                 title = "Check interval",
                 content = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        INTERVALS.forEach { (days, label) ->
-                            PillButton(
-                                text = label,
-                                selected = intervalDays == days,
-                                onClick = {
-                                    intervalDays = days
-                                    scope.launch { putInt(SettingsKeys.checkIntervalDays, days) }
-                                },
-                            )
-                        }
-                    }
+                    SegmentedChoice(
+                        options = INTERVALS.map { it.second },
+                        selected = INTERVALS.first { it.first == intervalDays }.second,
+                        onSelect = { label ->
+                            val days = INTERVALS.first { it.second == label }.first
+                            intervalDays = days
+                            scope.launch { putInt(SettingsKeys.checkIntervalDays, days) }
+                        },
+                    )
                 },
             )
         }

@@ -2,7 +2,6 @@ package com.uliteamr.rustupmanager.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,17 +22,24 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -43,21 +49,37 @@ import com.uliteamr.rustupmanager.icons.ArrowBack
 import com.uliteamr.rustupmanager.icons.Check
 import com.uliteamr.rustupmanager.icons.Close
 
+private val CardShape = RoundedCornerShape(28.dp)
+private val LogShape = RoundedCornerShape(20.dp)
+private val FieldShape = RoundedCornerShape(16.dp)
+
 @Composable
-fun ScreenHeader(title: String, onBack: () -> Unit) {
+fun ScreenHeader(
+    title: String,
+    onBack: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        IconButton(
-            onClick = onBack,
+        Row(
             modifier = Modifier
-                .padding(start = 12.dp, top = 12.dp)
-                .size(40.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                .fillMaxWidth()
+                .padding(start = 12.dp, top = 12.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(ArrowBack, contentDescription = "Back")
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+            ) {
+                Icon(ArrowBack, contentDescription = "Back")
+            }
+            Spacer(Modifier.weight(1f))
+            trailing?.invoke()
         }
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
         )
@@ -71,7 +93,7 @@ fun SectionLabel(text: String) {
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 6.dp),
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp),
     )
 }
 
@@ -86,11 +108,11 @@ fun SettingsCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(18.dp)) {
             if (title != null || icon != null || trailing != null) {
                 Row(verticalAlignment = Alignment.Top) {
                     if (icon != null) {
@@ -124,7 +146,7 @@ fun SettingsCard(
             }
             if (content != null) {
                 if (title != null || icon != null || trailing != null) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(10.dp))
                 }
                 content()
             }
@@ -132,26 +154,52 @@ fun SettingsCard(
     }
 }
 
+/** A single-choice M3 segmented control (Material 3 expressive style selector). */
 @Composable
-fun PillButton(text: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
-    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(
-                width = 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                shape = RoundedCornerShape(50),
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+fun SegmentedChoice(
+    options: List<String>,
+    selected: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onSelect: (String) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = modifier.fillMaxWidth(),
+        space = SegmentedButtonDefaults.BorderWidth,
     ) {
-        Text(
-            text,
-            color = contentColor,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.labelLarge,
+        options.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = selected == option,
+                onClick = { onSelect(option) },
+                enabled = enabled,
+                shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                label = { Text(option) },
+            )
+        }
+    }
+}
+
+/** A soft organic "expressive" chip used to anchor empty and error states. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun ExpressiveIconChip(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    size: Dp = 72.dp,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .background(containerColor, MaterialShapes.Puffy.toShape()),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(size * 0.45f),
         )
     }
 }
@@ -181,8 +229,8 @@ fun LogPanel(lines: List<String>, modifier: Modifier = Modifier, minHeight: Dp =
     }
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+        shape = LogShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
     ) {
         if (lines.isEmpty()) {
             Box(modifier = Modifier.heightIn(min = minHeight).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
@@ -204,11 +252,7 @@ fun LogPanel(lines: List<String>, modifier: Modifier = Modifier, minHeight: Dp =
                         Text(
                             text = line,
                             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            color = if (isErrorLine(line)) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            color = logLineColor(line),
                         )
                     }
                 }
@@ -217,16 +261,25 @@ fun LogPanel(lines: List<String>, modifier: Modifier = Modifier, minHeight: Dp =
     }
 }
 
-/** Rough classification of rust-analyzer log lines for the "Errors" filter and coloring. */
+@Composable
+private fun logLineColor(line: String): Color = when {
+    isErrorLine(line) -> MaterialTheme.colorScheme.error
+    line.startsWith("hint:", ignoreCase = true) -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/** Rough classification of rustup/rust-analyzer log lines for the "Errors" filter and coloring. */
 internal fun isErrorLine(line: String): Boolean =
     line.contains("ERROR", ignoreCase = true) ||
         line.contains("PANIC", ignoreCase = true) ||
         line.contains("FATAL", ignoreCase = true) ||
-        line.startsWith("!!!")
+        line.startsWith("!!!") ||
+        line.startsWith("error:", ignoreCase = true) ||
+        line.startsWith("failed", ignoreCase = true)
 
 @Composable
-fun InlineSpinner() {
-    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+fun InlineSpinner(modifier: Modifier = Modifier.size(18.dp), strokeWidth: Dp = 2.dp) {
+    CircularProgressIndicator(modifier = modifier, strokeWidth = strokeWidth)
 }
 
 @Composable
@@ -245,12 +298,12 @@ fun AppTextField(
         textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(FieldShape)
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, FieldShape),
         decorationBox = { innerTextField ->
             Box(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (value.isEmpty()) {

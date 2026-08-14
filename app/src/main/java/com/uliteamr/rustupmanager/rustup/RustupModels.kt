@@ -21,6 +21,7 @@ data class LspState(
 
 sealed interface RustupState {
     data object Checking : RustupState
+    data object EnvironmentMissing : RustupState
     data object NotInstalled : RustupState
     data object Installing : RustupState
     data class Ready(

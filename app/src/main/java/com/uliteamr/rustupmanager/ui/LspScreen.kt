@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -26,6 +29,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.klyx.api.plugin.PluginSettings
+import com.uliteamr.rustupmanager.icons.Close
+import com.uliteamr.rustupmanager.icons.Delete
 import com.uliteamr.rustupmanager.icons.Server
 import com.uliteamr.rustupmanager.lsp.LspStatus
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerSession
@@ -84,12 +89,16 @@ fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
+                    Icon(Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text("Stop")
                 }
                 Button(
                     onClick = { RustAnalyzerSession.clearLogs() },
                     modifier = Modifier.weight(1f),
                 ) {
+                    Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text("Clear logs")
                 }
             }
@@ -195,9 +204,13 @@ fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PillButton(text = "All", selected = !errorsOnly, onClick = { errorsOnly = false })
-            PillButton(text = "Errors", selected = errorsOnly, onClick = { errorsOnly = true })
-            Spacer(Modifier.weight(1f))
+            SegmentedChoice(
+                options = listOf("All", "Errors"),
+                selected = if (errorsOnly) "Errors" else "All",
+                onSelect = { errorsOnly = it == "Errors" },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
             OutlinedButton(
                 onClick = {
                     clipboard.setText(AnnotatedString(visibleLogs.joinToString("\n")))
