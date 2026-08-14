@@ -12,11 +12,25 @@ data class ComponentState(
     val rustSrc: Boolean,
 )
 
-enum class LspSource { Rustup, Apt }
+enum class LspSource { Rustup, Latest, Versions }
+
+enum class LspChannel { Stable, Nightly }
+
+data class ManagedLspVersion(
+    val tag: String,
+    val installed: Boolean,
+    val isActive: Boolean,
+)
+
+data class GithubRelease(
+    val tag: String,
+    val isNightly: Boolean,
+)
 
 data class LspState(
     val installedViaRustup: Boolean,
-    val installedViaApt: Boolean,
+    val versions: List<ManagedLspVersion>,
+    val activeVersion: String?,
 )
 
 sealed interface RustupState {

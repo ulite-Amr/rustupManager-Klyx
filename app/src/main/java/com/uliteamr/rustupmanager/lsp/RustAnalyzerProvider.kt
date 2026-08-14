@@ -15,8 +15,9 @@ import kotlinx.coroutines.withContext
 /**
  * Spawns rust-analyzer by its bare command name rather than an absolute path. Klyx resolves a
  * bare name against the rootfs's own PATH (falling through to a login-shell lookup), so this
- * works whether rust-analyzer was installed via `rustup component add` or `apt install` --
- * and avoids a guest-path translation bug that broke the absolute-path form.
+ * works whether rust-analyzer came from a `rustup component add` or a prebuilt GitHub release
+ * symlinked into ~/.local/bin -- and avoids a guest-path translation bug that broke the
+ * absolute-path form.
  *
  * stdin/stdout/stderr are piped like Klyx's own reference implementation, and stderr is drained
  * by [RustAnalyzerSession] so rust-analyzer's log pipe can never fill up and stall the server

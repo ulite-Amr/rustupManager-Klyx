@@ -12,6 +12,17 @@ private const val BASH = "/bin/bash"
 private const val RUSTUP_INIT_URL = "https://sh.rustup.rs"
 private const val MAX_STDERR_TAIL = 5
 
+// Managed rust-analyzer installs live under ~/.local/share, with the active one symlinked to
+// ~/.local/bin/rust-analyzer so Klyx's bare-name resolution (HOME_BIN_PATHS) picks it up.
+private const val RA_SHARE_DIR = "/root/.local/share/rust-analyzer"
+private const val RA_BIN_DIR = "/root/.local/bin"
+private const val RA_BIN_LINK = "$RA_BIN_DIR/rust-analyzer"
+private const val RA_API_BASE = "https://api.github.com/repos/rust-lang/rust-analyzer"
+private const val RA_DL_BASE = "https://github.com/rust-lang/rust-analyzer/releases/download"
+
+private val TAG_NAME_RE = Regex(""""tag_name"\s*:\s*"([^"]+)"""")
+private val PRERELEASE_RE = Regex(""""prerelease"\s*:\s*(true|false)""")
+
 class RustupController {
 
     /** True while Klyx's PRoot Linux environment is bootstrapped (rootfs + .bootstrap-version). */
@@ -115,14 +126,21 @@ class RustupController {
 
     // --- rust-analyzer: source-independent by design ---
     // Klyx resolves a bare command name against the rootfs's own PATH (including whatever
-    // rustup adds to .bashrc), so spawning "rust-analyzer" works the same whether it was
-    // installed via `rustup component add` or `apt install`. See RustAnalyzerProvider.
+    // rustup adds to .bashrc), so spawning "rust-analyzer" works whether it came from a
+    // rustup component or a prebuilt GitHub release. See RustAnalyzerProvider.
 
     suspend fun lspState(): LspState {
         val viaRustup = command(RUSTUP, "component", "list", "--installed").output()
             .let { it.exitCode == 0 && it.stdoutLines.any { line -> line.startsWith("rust-analyzer") } }
-        val viaApt = command(BASH, "-lc", "dpkg -s rust-analyzer").output().exitCode == 0
-        return LspState(installedViaRustup = viaRustup, installedViaApt = viaApt)
+        val active = activeManagedTag()
+        val installedTags = command(BASH, "-lc", "ls -1 $RA_SHARE_DIR 2>/dev/null").output().stdoutLines
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        val versions = installedTags.map { tag ->
+            ManagedLspVersion(tag = tag, installed = true, isActive = tag == active)
+        }
+        return LspState(installedViaRustup = viaRustup, versions = versions, activeVersion = active)
     }
 
     suspend fun installLspViaRustup(onLine: (String) -> Unit): Boolean =
@@ -131,11 +149,89 @@ class RustupController {
     suspend fun removeLspViaRustup(onLine: (String) -> Unit): Boolean =
         runRustup("component", "remove", "rust-analyzer", onLine = onLine)
 
-    suspend fun installLspViaApt(onLine: (String) -> Unit): Boolean =
-        runStreaming(BASH, arrayOf("-lc", "apt-get update && apt-get install -y rust-analyzer"), onLine)
+    // --- rust-analyzer from GitHub releases ---
 
-    suspend fun removeLspViaApt(onLine: (String) -> Unit): Boolean =
-        runStreaming(BASH, arrayOf("-lc", "apt-get remove -y rust-analyzer"), onLine)
+    /** Latest stable tag (e.g. "2026-08-10") or the rolling "nightly" tag. */
+    suspend fun githubLatestTag(channel: LspChannel): String? {
+        val url = if (channel == LspChannel.Stable) {
+            "$RA_API_BASE/releases/latest"
+        } else {
+            "$RA_API_BASE/releases/tags/nightly"
+        }
+        val result = command(BASH, "-lc", "curl -fsSL --max-time 20 '$url'").output()
+        if (result.exitCode != 0) return null
+        for (line in result.stdoutLines) {
+            TAG_NAME_RE.find(line)?.let { return it.groupValues[1] }
+        }
+        return null
+    }
+
+    /** Release tags (newest first) with their nightly flag, fetched from the GitHub API. */
+    suspend fun githubReleases(limit: Int = 50): List<GithubRelease> {
+        val result = command(BASH, "-lc", "curl -fsSL --max-time 20 '$RA_API_BASE/releases?per_page=$limit'").output()
+        if (result.exitCode != 0) return emptyList()
+        val releases = mutableListOf<GithubRelease>()
+        var pendingTag: String? = null
+        for (line in result.stdoutLines) {
+            TAG_NAME_RE.find(line)?.let { pendingTag = it.groupValues[1] }
+            PRERELEASE_RE.find(line)?.let { m ->
+                val tag = pendingTag ?: return@let
+                releases += GithubRelease(tag = tag, isNightly = m.groupValues[1] == "true")
+                pendingTag = null
+            }
+        }
+        return releases
+    }
+
+    /** Installs a specific release tag (from [githubReleases] or [githubLatestTag]) and activates it. */
+    suspend fun installLspViaGithub(tag: String, onLine: (String) -> Unit): Boolean {
+        val arch = githubArch()
+        if (arch == null) {
+            onLine("error: unsupported device architecture for rust-analyzer downloads")
+            return false
+        }
+        val script = """
+            set -e
+            mkdir -p $RA_SHARE_DIR/$tag $RA_BIN_DIR
+            echo "downloading rust-analyzer $tag ($arch) from github.com/rust-lang/rust-analyzer ..."
+            curl -fsSL --max-time 90 -o /tmp/rust-analyzer-$tag.gz '$RA_DL_BASE/$tag/rust-analyzer-$arch-unknown-linux-gnu.gz'
+            gunzip -c /tmp/rust-analyzer-$tag.gz > $RA_SHARE_DIR/$tag/rust-analyzer
+            chmod +x $RA_SHARE_DIR/$tag/rust-analyzer
+            ln -sfn ../share/rust-analyzer/$tag/rust-analyzer $RA_BIN_LINK
+            rm -f /tmp/rust-analyzer-$tag.gz
+            echo "rust-analyzer $tag installed and activated"
+        """.trimIndent()
+        return runStreaming(BASH, arrayOf("-lc", script), onLine)
+    }
+
+    /** Points the active `rust-analyzer` (resolved as a bare name via ~/.local/bin) at [tag]. */
+    suspend fun useManagedLsp(tag: String, onLine: (String) -> Unit): Boolean =
+        runStreaming(BASH, arrayOf("-lc", "ln -sfn ../share/rust-analyzer/$tag/rust-analyzer $RA_BIN_LINK"), onLine)
+
+    /** Removes a managed version; if it was active, also drops the active link. */
+    suspend fun removeManagedLsp(tag: String, onLine: (String) -> Unit): Boolean {
+        val script = if (activeManagedTag() == tag) {
+            "rm -rf $RA_SHARE_DIR/$tag && rm -f $RA_BIN_LINK"
+        } else {
+            "rm -rf $RA_SHARE_DIR/$tag"
+        }
+        return runStreaming(BASH, arrayOf("-lc", script), onLine)
+    }
+
+    private suspend fun activeManagedTag(): String? =
+        command(BASH, "-lc", "readlink -f $RA_BIN_LINK").output().stdoutLines
+            .firstOrNull { it.startsWith("$RA_SHARE_DIR/") }
+            ?.substringAfter("$RA_SHARE_DIR/")
+            ?.substringBeforeLast("/")
+            ?.takeIf { it.isNotBlank() }
+
+    private suspend fun githubArch(): String? =
+        when (command(BASH, "-lc", "uname -m").output().stdoutLines.firstOrNull()?.trim()) {
+            "aarch64", "arm64" -> "aarch64"
+            "x86_64", "amd64" -> "x86_64"
+            "armv7l", "armv8l" -> "arm"
+            else -> null
+        }
 
     suspend fun loadState(): RustupState {
         if (!linuxEnvironmentReady()) return RustupState.EnvironmentMissing

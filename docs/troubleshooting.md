@@ -14,13 +14,13 @@ The log ends with something like:
 
 - `hint: network problem while downloading — check your connection`
 
-**Fix:** you need a working internet connection for `sh.rustup.rs`, the toolchain downloads, and `apt`. Check your connection (or VPN/proxy), then retry.
+**Fix:** you need a working internet connection for `sh.rustup.rs`, the toolchain downloads, and the rust-analyzer downloads from GitHub. Check your connection (or VPN/proxy), then retry.
 
 ## Exit code 126 or 127
 
 - `hint: command not found inside the Klyx Linux environment`
 
-A binary the command needs isn't installed in the Linux environment (e.g. `curl`, `apt`, or a component that's missing). Install the missing package, then retry.
+A binary the command needs isn't installed in the Linux environment (e.g. `curl`, `gunzip`, or a component that's missing). Install the missing package, then retry.
 
 ## "no such file or directory"
 
@@ -39,7 +39,7 @@ On the "rustup is not installed" screen, **Reset & retry** removes `~/.rustup` a
 ## rust-analyzer won't start
 
 - Open the **Language Server** screen and read the logs — a failed spawn is logged with an `error:` line.
-- Make sure `rust-analyzer` is installed via **rustup component** or **apt** (the dashboard shows which, if any, is present).
+- Make sure `rust-analyzer` is installed via **rustup component** or from **GitHub releases** (the dashboard shows which, if any, is present).
 - If the environment is missing, set it up first — see above.
 
 ## The dashboard is stuck or outdated

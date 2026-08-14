@@ -52,8 +52,11 @@ import com.uliteamr.rustupmanager.icons.Refresh
 import com.uliteamr.rustupmanager.icons.Server
 import com.uliteamr.rustupmanager.icons.Terminal
 import com.uliteamr.rustupmanager.icons.Warning
+import com.uliteamr.rustupmanager.rustup.GithubRelease
+import com.uliteamr.rustupmanager.rustup.LspChannel
 import com.uliteamr.rustupmanager.rustup.LspSource
 import com.uliteamr.rustupmanager.rustup.LspState
+import com.uliteamr.rustupmanager.rustup.ManagedLspVersion
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.rustup.RustupState
 import com.uliteamr.rustupmanager.rustup.Toolchain
@@ -154,18 +157,23 @@ fun DashboardScreen(
                     onRemoveTarget = { target -> runAction("rustup target remove $target") { onLine -> rustup.removeTarget(target, onLine) } },
                     onAddTarget = { target -> runAction("rustup target add $target") { onLine -> rustup.addTarget(target, onLine) } },
                     onUpdateAll = { runAction("rustup update") { onLine -> rustup.updateAll(onLine) } },
-                    onInstallLsp = { source ->
-                        val label = if (source == LspSource.Rustup) "rustup component add rust-analyzer" else "apt-get install rust-analyzer"
-                        runAction(label) { onLine ->
-                            if (source == LspSource.Rustup) rustup.installLspViaRustup(onLine) else rustup.installLspViaApt(onLine)
-                        }
+                    onInstallRustupLsp = {
+                        runAction("rustup component add rust-analyzer") { onLine -> rustup.installLspViaRustup(onLine) }
                     },
-                    onRemoveLsp = { source ->
-                        val label = if (source == LspSource.Rustup) "rustup component remove rust-analyzer" else "apt-get remove rust-analyzer"
-                        runAction(label) { onLine ->
-                            if (source == LspSource.Rustup) rustup.removeLspViaRustup(onLine) else rustup.removeLspViaApt(onLine)
-                        }
+                    onRemoveRustupLsp = {
+                        runAction("rustup component remove rust-analyzer") { onLine -> rustup.removeLspViaRustup(onLine) }
                     },
+                    onInstallVersion = { tag ->
+                        runAction("install rust-analyzer $tag") { onLine -> rustup.installLspViaGithub(tag, onLine) }
+                    },
+                    onUseVersion = { tag ->
+                        runAction("activate rust-analyzer $tag") { onLine -> rustup.useManagedLsp(tag, onLine) }
+                    },
+                    onRemoveVersion = { tag ->
+                        runAction("remove rust-analyzer $tag") { onLine -> rustup.removeManagedLsp(tag, onLine) }
+                    },
+                    onFetchLatest = { channel -> rustup.githubLatestTag(channel) },
+                    onFetchReleases = { rustup.githubReleases() },
                 )
             }
         }
@@ -314,8 +322,13 @@ private fun ReadyBody(
     onRemoveTarget: (String) -> Unit,
     onAddTarget: (String) -> Unit,
     onUpdateAll: () -> Unit,
-    onInstallLsp: (LspSource) -> Unit,
-    onRemoveLsp: (LspSource) -> Unit,
+    onInstallRustupLsp: () -> Unit,
+    onRemoveRustupLsp: () -> Unit,
+    onInstallVersion: (String) -> Unit,
+    onUseVersion: (String) -> Unit,
+    onRemoveVersion: (String) -> Unit,
+    onFetchLatest: suspend (LspChannel) -> String?,
+    onFetchReleases: suspend () -> List<GithubRelease>,
 ) {
     var lspSource by remember { mutableStateOf(LspSource.Rustup) }
 
@@ -336,8 +349,13 @@ private fun ReadyBody(
                 selected = lspSource,
                 onSelect = { lspSource = it },
                 busy = busy,
-                onInstall = { onInstallLsp(lspSource) },
-                onRemove = { onRemoveLsp(lspSource) },
+                onInstallRustup = onInstallRustupLsp,
+                onRemoveRustup = onRemoveRustupLsp,
+                onInstallVersion = onInstallVersion,
+                onUseVersion = onUseVersion,
+                onRemoveVersion = onRemoveVersion,
+                onFetchLatest = onFetchLatest,
+                onFetchReleases = onFetchReleases,
                 onOpenLogs = onOpenLsp,
             )
         }
@@ -422,14 +440,43 @@ private fun LspSourceCard(
     selected: LspSource,
     onSelect: (LspSource) -> Unit,
     busy: Boolean,
-    onInstall: () -> Unit,
-    onRemove: () -> Unit,
+    onInstallRustup: () -> Unit,
+    onRemoveRustup: () -> Unit,
+    onInstallVersion: (String) -> Unit,
+    onUseVersion: (String) -> Unit,
+    onRemoveVersion: (String) -> Unit,
+    onFetchLatest: suspend (LspChannel) -> String?,
+    onFetchReleases: suspend () -> List<GithubRelease>,
     onOpenLogs: () -> Unit,
 ) {
-    val installedForSelected = when (selected) {
-        LspSource.Rustup -> lsp.installedViaRustup
-        LspSource.Apt -> lsp.installedViaApt
+    var channel by remember { mutableStateOf(LspChannel.Stable) }
+    var latestTag by remember { mutableStateOf<String?>(null) }
+    var releases by remember { mutableStateOf<List<GithubRelease>?>(null) }
+    var fetchError by remember { mutableStateOf(false) }
+    var fetchTick by remember { mutableStateOf(0) }
+
+    suspend fun refreshLatest() {
+        fetchError = false
+        latestTag = null
+        val tag = onFetchLatest(channel)
+        if (tag == null) fetchError = true else latestTag = tag
     }
+
+    suspend fun refreshReleases() {
+        fetchError = false
+        releases = null
+        val list = onFetchReleases()
+        if (list.isEmpty()) fetchError = true else releases = list
+    }
+
+    LaunchedEffect(selected, channel, fetchTick) {
+        when (selected) {
+            LspSource.Rustup -> Unit
+            LspSource.Latest -> refreshLatest()
+            LspSource.Versions -> refreshReleases()
+        }
+    }
+
     SettingsCard(
         icon = Server,
         title = "Language server",
@@ -438,39 +485,307 @@ private fun LspSourceCard(
         content = {
             Column {
                 SegmentedChoice(
-                    options = listOf("rustup", "apt"),
+                    options = listOf("rustup", "latest", "versions"),
                     selected = selected.name.lowercase(),
                     enabled = !busy,
-                    onSelect = { onSelect(if (it == "apt") LspSource.Apt else LspSource.Rustup) },
+                    onSelect = { onSelect(LspSource.valueOf(it.replaceFirstChar { c -> c.uppercase() })) },
                 )
-                Row(modifier = Modifier.padding(top = 12.dp)) {
-                    if (installedForSelected) {
-                        OutlinedButton(
-                            onClick = onRemove,
-                            enabled = !busy,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        ) {
-                            Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Remove (${selected.name.lowercase()})")
-                        }
-                    } else {
-                        Button(onClick = onInstall, enabled = !busy) {
-                            Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Install via ${selected.name.lowercase()}")
-                        }
-                    }
+                when (selected) {
+                    LspSource.Rustup -> RustupLspTab(
+                        installed = lsp.installedViaRustup,
+                        busy = busy,
+                        onInstall = onInstallRustup,
+                        onRemove = onRemoveRustup,
+                    )
+                    LspSource.Latest -> LatestLspTab(
+                        lsp = lsp,
+                        channel = channel,
+                        onChannelChange = { channel = it },
+                        latestTag = latestTag,
+                        fetching = latestTag == null && !fetchError,
+                        fetchError = fetchError,
+                        onRefresh = { fetchTick++ },
+                        busy = busy,
+                        onInstall = { latestTag?.let(onInstallVersion) },
+                        onUse = { latestTag?.let(onUseVersion) },
+                        onRemove = { latestTag?.let(onRemoveVersion) },
+                    )
+                    LspSource.Versions -> VersionsLspTab(
+                        lsp = lsp,
+                        releases = releases,
+                        fetching = releases == null && !fetchError,
+                        fetchError = fetchError,
+                        onRefresh = { fetchTick++ },
+                        busy = busy,
+                        onInstall = onInstallVersion,
+                        onUse = onUseVersion,
+                        onRemove = onRemoveVersion,
+                    )
                 }
             }
         },
     )
 }
 
+@Composable
+private fun RustupLspTab(
+    installed: Boolean,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Row(modifier = Modifier.padding(top = 12.dp)) {
+        if (installed) {
+            OutlinedButton(
+                onClick = onRemove,
+                enabled = !busy,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) {
+                Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Remove (rustup)")
+            }
+        } else {
+            Button(onClick = onInstall, enabled = !busy) {
+                Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Install via rustup")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LatestLspTab(
+    lsp: LspState,
+    channel: LspChannel,
+    onChannelChange: (LspChannel) -> Unit,
+    latestTag: String?,
+    fetching: Boolean,
+    fetchError: Boolean,
+    onRefresh: () -> Unit,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onUse: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SegmentedChoice(
+                options = listOf("Stable", "Nightly"),
+                selected = channel.name,
+                enabled = !busy,
+                onSelect = { onChannelChange(if (it == "Nightly") LspChannel.Nightly else LspChannel.Stable) },
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onRefresh, enabled = !busy) { Icon(Refresh, contentDescription = "Refresh") }
+        }
+
+        val tag = latestTag
+        val managed = tag?.let { t -> lsp.versions.firstOrNull { it.tag == t } }
+        when {
+            fetching -> Row(
+                modifier = Modifier.padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InlineSpinner(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Checking GitHub...")
+            }
+            fetchError || tag == null -> Row(
+                modifier = Modifier.padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Couldn't reach GitHub — check your connection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onRefresh, enabled = !busy) { Text("Retry") }
+            }
+            else -> {
+                val label = if (channel == LspChannel.Stable) "Latest stable" else "Nightly (rolling)"
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "$label: $tag",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (managed?.isActive == true) {
+                        Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("In use", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Row(
+                    modifier = Modifier.padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    when {
+                        managed?.isActive == true -> OutlinedButton(
+                            onClick = onRemove,
+                            enabled = !busy,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Remove")
+                        }
+                        managed != null -> {
+                            FilledTonalButton(onClick = onUse, enabled = !busy) {
+                                Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Use")
+                            }
+                            OutlinedButton(
+                                onClick = onRemove,
+                                enabled = !busy,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Remove")
+                            }
+                        }
+                        else -> Button(onClick = onInstall, enabled = !busy) {
+                            Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (channel == LspChannel.Stable) "Install latest stable" else "Install nightly")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VersionsLspTab(
+    lsp: LspState,
+    releases: List<GithubRelease>?,
+    fetching: Boolean,
+    fetchError: Boolean,
+    onRefresh: () -> Unit,
+    busy: Boolean,
+    onInstall: (String) -> Unit,
+    onUse: (String) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Pick a version from rust-analyzer's releases",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onRefresh, enabled = !busy) { Icon(Refresh, contentDescription = "Refresh") }
+        }
+        when {
+            fetching -> Row(
+                modifier = Modifier.padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InlineSpinner(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Loading releases...")
+            }
+            fetchError || releases == null -> Text(
+                "Couldn't reach GitHub — check your connection.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+            releases.isEmpty() -> Text(
+                "No releases found.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+            else -> releases.forEach { release ->
+                ReleaseVersionRow(
+                    release = release,
+                    managed = lsp.versions.firstOrNull { it.tag == release.tag },
+                    busy = busy,
+                    onInstall = { onInstall(release.tag) },
+                    onUse = { onUse(release.tag) },
+                    onRemove = { onRemove(release.tag) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReleaseVersionRow(
+    release: GithubRelease,
+    managed: ManagedLspVersion?,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onUse: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val title = if (release.isNightly) "nightly (rolling)" else release.tag
+    val description = when {
+        managed?.isActive == true -> "In use"
+        managed != null -> "Installed"
+        else -> "Not installed"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (managed?.isActive == true) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+        when {
+            managed?.isActive == true -> OutlinedButton(
+                onClick = onRemove,
+                enabled = !busy,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Remove") }
+            managed != null -> {
+                FilledTonalButton(onClick = onUse, enabled = !busy) { Text("Use") }
+                OutlinedButton(
+                    onClick = onRemove,
+                    enabled = !busy,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Remove") }
+            }
+            else -> Button(onClick = onInstall, enabled = !busy) {
+                Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Install")
+            }
+        }
+    }
+}
+
 private fun statusLine(lsp: LspState): String = when {
-    lsp.installedViaRustup && lsp.installedViaApt -> "Installed via both rustup and apt"
-    lsp.installedViaRustup -> "Installed via rustup component"
-    lsp.installedViaApt -> "Installed via apt"
+    lsp.activeVersion != null -> "Using rust-analyzer ${lsp.activeVersion} (GitHub release)"
+    lsp.installedViaRustup -> "Using rustup component rust-analyzer"
     else -> "Not installed yet"
 }
 

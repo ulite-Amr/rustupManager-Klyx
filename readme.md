@@ -2,6 +2,13 @@
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
+> [!NOTE]
+> Klyx currently implements only a subset of the LSP protocol (diagnostics, completion, inlay hints).
+> Features like hover, go-to definition, find references, rename, code actions, and signature help are
+> listed in the plugin's LSP screen as **"Not available yet"** because the Klyx host doesn't support them
+> yet — this is a Klyx limitation, not a plugin bug. The plugin is ready to unlock these features as soon
+> as Klyx ships support for them.
+
 A full Rust toolchain manager for [Klyx](https://klyx.dev), built directly on top of `rustup` and the Linux environment that ships inside Klyx.
 
 Install toolchains, switch the default, manage components and cross-compilation targets, and get `rust-analyzer` wired up as the language server for `.rs` files — all from one dashboard inside Klyx.
@@ -12,7 +19,7 @@ Install toolchains, switch the default, manage components and cross-compilation 
 - **Toolchains** — install, switch default, update, and remove `stable`, `beta`, `nightly`, or pinned versions; detects available updates via `rustup check`.
 - **Components** — add/remove `clippy`, `rustfmt`, and `rust-src`.
 - **Targets** — add and remove cross-compilation targets.
-- **rust-analyzer** — installs the language server either via `rustup component add` or `apt`, and registers it for `.rs` files automatically. It's spawned by its bare command name so Klyx resolves it against the Linux environment's `PATH`, meaning it always matches whatever toolchain is active — no hard-coded paths to go stale.
+- **rust-analyzer** — installs the language server via `rustup component add` or a prebuilt binary from rust-analyzer's GitHub releases (latest stable, latest nightly, or a specific version you pick), and registers it for `.rs` files automatically. It's spawned by its bare command name so Klyx resolves it against the Linux environment's `PATH`, meaning it always matches whatever toolchain is active — no hard-coded paths to go stale.
 - **Background updates** — optional `rustup update` on a configurable interval (daily / weekly / monthly), toggled from the settings screen.
 - **Graceful error handling** — detects a missing Linux environment before anything runs, and turns install failures into short, actionable hints (network problems, missing files, missing commands) instead of silent crashes.
 - **Material 3 Expressive UI** — animated transitions, rounded cards, and icon-first controls.
