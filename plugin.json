@@ -8,12 +8,14 @@
   "description": "Full Rust toolchain manager built on rustup: install and switch toolchains, manage components and targets, and get rust-analyzer wired up as a language server automatically.",
   "icon": "icon.png",
   "author": {
-    "name": "uliteamr"
+    "name": "uliteamr",
+    "github": "https://github.com/ulite-Amr"
   },
-  "license": "MIT",
+  "license": "GPL-3.0",
   "links": {
-    "source": null,
-    "issues": null,
+    "source": "https://github.com/ulite-Amr/rustupManager-Klyx",
+    "issues": "https://github.com/ulite-Amr/rustupManager-Klyx/issues",
+    "website": null,
     "donate": null
   },
   "permissions": []

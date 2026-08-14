@@ -9,6 +9,7 @@ import com.klyx.api.lsp.LanguageServerRegistration
 import com.klyx.api.lsp.LanguageServerRegistry
 import com.klyx.api.plugin.Author
 import com.klyx.api.plugin.KlyxPlugin
+import com.klyx.api.plugin.Links
 import com.klyx.api.plugin.PluginManifest
 import com.klyx.api.plugin.PluginSettings
 import com.klyx.api.plugin.PluginSettingsRegistration
@@ -55,8 +56,12 @@ private const val UPDATE_CHECK_LOOP_DELAY_HOURS = 6L
     version = "1.1.0",
     description = "Full Rust toolchain manager built on rustup: install and switch toolchains, manage components and targets, and get rust-analyzer wired up as a language server automatically.",
     icon = "icon.png",
-    author = Author(name = "uliteamr"),
-    license = "MIT",
+    author = Author(name = "uliteamr", github = "https://github.com/ulite-Amr"),
+    license = "GPL-3.0",
+    links = Links(
+        source = "https://github.com/ulite-Amr/rustupManager-Klyx",
+        issues = "https://github.com/ulite-Amr/rustupManager-Klyx/issues",
+    ),
 )
 class RustupPlugin : KlyxPlugin {
 
