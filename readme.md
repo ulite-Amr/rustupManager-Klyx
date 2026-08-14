@@ -33,6 +33,7 @@ Install toolchains, switch the default, manage components and cross-compilation 
 - [Usage](docs/usage.md) — requirements, first run, dashboard walkthrough, settings.
 - [Language server](docs/language-server.md) — how `rust-analyzer` is managed, install options, and the LSP dashboard.
 - [Troubleshooting](docs/troubleshooting.md) — common problems and the hints the plugin shows for them.
+- [Changelog](CHANGELOG.md) — release history.
 
 ## Building
 
