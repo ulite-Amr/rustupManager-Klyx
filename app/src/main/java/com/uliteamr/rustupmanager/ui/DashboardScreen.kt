@@ -32,7 +32,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,6 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.klyx.api.service.Logger
+import com.klyx.api.service.rememberLogger
 import com.uliteamr.rustupmanager.icons.Add
 import com.uliteamr.rustupmanager.icons.Check
 import com.uliteamr.rustupmanager.icons.Delete
@@ -62,6 +63,8 @@ import com.uliteamr.rustupmanager.rustup.RustupState
 import com.uliteamr.rustupmanager.rustup.Toolchain
 import kotlinx.coroutines.launch
 
+private const val LOG_TAG = "Rustup"
+
 @Composable
 fun DashboardScreen(
     rustup: RustupController,
@@ -70,9 +73,9 @@ fun DashboardScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val logger: Logger = rememberLogger()
     var state by remember { mutableStateOf<RustupState>(RustupState.Checking) }
     var busy by remember { mutableStateOf(false) }
-    val logLines = remember { mutableStateListOf<String>() }
 
     suspend fun refresh() {
         state = rustup.loadState()
@@ -83,13 +86,12 @@ fun DashboardScreen(
     fun runAction(label: String, action: suspend ((String) -> Unit) -> Boolean) {
         scope.launch {
             busy = true
-            logLines.clear()
-            logLines.add("$ $label")
+            logger.info(LOG_TAG, "$ $label")
             try {
-                val ok = action { line -> logLines.add(line) }
-                logLines.add(if (ok) "done" else "failed (see log above)")
+                val ok = action { line -> logger.info(LOG_TAG, line) }
+                if (ok) logger.info(LOG_TAG, "done") else logger.warn(LOG_TAG, "failed (see log above)")
             } catch (e: Exception) {
-                logLines.add("error: ${e.message ?: "unexpected failure"}")
+                logger.error(LOG_TAG, e.message ?: "unexpected failure", e)
             } finally {
                 busy = false
                 refresh()
@@ -134,7 +136,6 @@ fun DashboardScreen(
                 )
                 RustupState.NotInstalled -> NotInstalledBody(
                     busy = busy,
-                    logLines = logLines,
                     onInstall = { runAction("rustup-init") { onLine -> rustup.bootstrapInstall(onLine) } },
                     onReset = { runAction("reset rustup state") { onLine -> rustup.resetInstall(onLine) } },
                 )
@@ -142,7 +143,6 @@ fun DashboardScreen(
                 is RustupState.Ready -> ReadyBody(
                     state = current,
                     busy = busy,
-                    logLines = logLines,
                     onOpenLsp = onOpenLsp,
                     onSetDefault = { name -> runAction("rustup default $name") { onLine -> rustup.setDefaultToolchain(name, onLine) } },
                     onUninstallToolchain = { name -> runAction("rustup toolchain uninstall $name") { onLine -> rustup.uninstallToolchain(name, onLine) } },
@@ -264,7 +264,6 @@ private fun ErrorBody(message: String, onRetry: () -> Unit) {
 @Composable
 private fun NotInstalledBody(
     busy: Boolean,
-    logLines: List<String>,
     onInstall: () -> Unit,
     onReset: () -> Unit,
 ) {
@@ -303,8 +302,6 @@ private fun NotInstalledBody(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 4.dp),
         )
-        SectionLabel("Log")
-        LogPanel(lines = logLines, modifier = Modifier.padding(horizontal = 16.dp), minHeight = 160.dp)
     }
 }
 
@@ -312,7 +309,6 @@ private fun NotInstalledBody(
 private fun ReadyBody(
     state: RustupState.Ready,
     busy: Boolean,
-    logLines: List<String>,
     onOpenLsp: () -> Unit,
     onSetDefault: (String) -> Unit,
     onUninstallToolchain: (String) -> Unit,
@@ -356,7 +352,7 @@ private fun ReadyBody(
                 onRemoveVersion = onRemoveVersion,
                 onFetchLatest = onFetchLatest,
                 onFetchReleases = onFetchReleases,
-                onOpenLogs = onOpenLsp,
+                onOpenLsp = onOpenLsp,
             )
         }
 
@@ -423,14 +419,6 @@ private fun ReadyBody(
             }
         }
 
-        item { SectionLabel("Activity") }
-        item {
-            LogPanel(
-                lines = logLines,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                minHeight = 60.dp,
-            )
-        }
     }
 }
 
@@ -447,7 +435,7 @@ private fun LspSourceCard(
     onRemoveVersion: (String) -> Unit,
     onFetchLatest: suspend (LspChannel) -> String?,
     onFetchReleases: suspend () -> List<GithubRelease>,
-    onOpenLogs: () -> Unit,
+    onOpenLsp: () -> Unit,
 ) {
     var channel by remember { mutableStateOf(LspChannel.Stable) }
     var latestTag by remember { mutableStateOf<String?>(null) }
@@ -481,7 +469,7 @@ private fun LspSourceCard(
         icon = Server,
         title = "Language server",
         description = statusLine(lsp),
-        trailing = { TextButton(onClick = onOpenLogs) { Text("Logs") } },
+        trailing = { TextButton(onClick = onOpenLsp) { Text("Manage") } },
         content = {
             Column {
                 SegmentedChoice(

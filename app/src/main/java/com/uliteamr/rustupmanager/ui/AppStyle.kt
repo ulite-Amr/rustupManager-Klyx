@@ -4,21 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,13 +29,11 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -50,7 +42,6 @@ import com.uliteamr.rustupmanager.icons.Check
 import com.uliteamr.rustupmanager.icons.Close
 
 private val CardShape = RoundedCornerShape(28.dp)
-private val LogShape = RoundedCornerShape(20.dp)
 private val FieldShape = RoundedCornerShape(16.dp)
 
 @Composable
@@ -220,62 +211,6 @@ fun AppSwitch(checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boole
         colors = SwitchDefaults.colors(),
     )
 }
-
-@Composable
-fun LogPanel(lines: List<String>, modifier: Modifier = Modifier, minHeight: Dp = 80.dp) {
-    val listState = rememberLazyListState()
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) listState.scrollToItem(lines.size - 1)
-    }
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = LogShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-    ) {
-        if (lines.isEmpty()) {
-            Box(modifier = Modifier.heightIn(min = minHeight).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                Text(
-                    "No recent activity",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-        } else {
-            SelectionContainer {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.heightIn(min = minHeight, max = 260.dp),
-                    contentPadding = PaddingValues(12.dp),
-                ) {
-                    items(lines) { line ->
-                        Text(
-                            text = line,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            color = logLineColor(line),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun logLineColor(line: String): Color = when {
-    isErrorLine(line) -> MaterialTheme.colorScheme.error
-    line.startsWith("hint:", ignoreCase = true) -> MaterialTheme.colorScheme.tertiary
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
-}
-
-/** Rough classification of rustup/rust-analyzer log lines for the "Errors" filter and coloring. */
-internal fun isErrorLine(line: String): Boolean =
-    line.contains("ERROR", ignoreCase = true) ||
-        line.contains("PANIC", ignoreCase = true) ||
-        line.contains("FATAL", ignoreCase = true) ||
-        line.startsWith("!!!") ||
-        line.startsWith("error:", ignoreCase = true) ||
-        line.startsWith("failed", ignoreCase = true)
 
 @Composable
 fun InlineSpinner(modifier: Modifier = Modifier.size(18.dp), strokeWidth: Dp = 2.dp) {

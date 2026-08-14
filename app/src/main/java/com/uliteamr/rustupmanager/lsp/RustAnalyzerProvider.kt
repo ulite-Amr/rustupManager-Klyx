@@ -5,6 +5,8 @@ import com.klyx.api.plugin.PluginSettings
 import com.klyx.api.system.Stdin
 import com.klyx.api.system.Stdio
 import com.klyx.api.system.command
+import com.klyx.lsp.LogMessageParams
+import com.klyx.lsp.MessageType
 import com.klyx.lsp.server.LanguageClient
 import com.klyx.lsp.server.LanguageServer
 import com.uliteamr.rustupmanager.settings.SettingsKeys
@@ -21,7 +23,7 @@ import kotlinx.coroutines.withContext
  *
  * stdin/stdout/stderr are piped like Klyx's own reference implementation, and stderr is drained
  * by [RustAnalyzerSession] so rust-analyzer's log pipe can never fill up and stall the server
- * while its output stays visible in the LSP dashboard.
+ * while its output is forwarded to Klyx's LSP log.
  */
 class RustAnalyzerProvider(
     private val scope: CoroutineScope,
@@ -31,7 +33,7 @@ class RustAnalyzerProvider(
     override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {
         try {
             val handle = command("rust-analyzer")
-                // RA_LOG=info keeps useful detail in the LSP dashboard logs. Indexing progress
+                // RA_LOG=info keeps useful detail in the LSP log. Indexing progress
                 // itself comes from the $/progress notifications we scan off stdout (see
                 // RustAnalyzerSession.wrapStdout); the host drops those notifications, and
                 // stderr's "indexing: N/M" lines are kept as a fallback for older builds.
@@ -40,7 +42,7 @@ class RustAnalyzerProvider(
                 .stdout(Stdio.Capture)
                 .stderr(Stdio.Capture)
                 .spawn()
-            RustAnalyzerSession.attach(handle, scope, drainStderr = true)
+            RustAnalyzerSession.attach(handle, scope, client, drainStderr = true)
 
             val server = LanguageServer(
                 client = client,
@@ -58,8 +60,10 @@ class RustAnalyzerProvider(
             }
         } catch (e: Exception) {
             // Klyx's host-side LspManager swallows exceptions from startServer via runCatching,
-            // so without this the failure would be completely invisible. Log it ourselves.
-            RustAnalyzerSession.log("!!! startServer failed: ${e::class.simpleName}: ${e.message}")
+            // so without this the failure would be completely invisible. Forward it to Klyx's LSP log.
+            client.logMessage(
+                LogMessageParams(MessageType.Error, "!!! startServer failed: ${e::class.simpleName}: ${e.message}")
+            )
             throw e
         }
     }

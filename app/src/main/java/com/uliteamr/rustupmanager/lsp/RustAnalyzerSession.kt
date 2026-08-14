@@ -1,11 +1,12 @@
 package com.uliteamr.rustupmanager.lsp
 
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.klyx.api.system.ProcessHandle
+import com.klyx.lsp.LogMessageParams
+import com.klyx.lsp.MessageType
+import com.klyx.lsp.server.LanguageClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,9 +24,13 @@ sealed interface LspStatus {
 }
 
 /**
- * Tracks the rust-analyzer process spawned by [RustAnalyzerProvider] so the LSP dashboard
- * screen can show live status/logs even though the process itself is started and owned by
- * the host whenever it needs a language server for a .rs file.
+ * Tracks the rust-analyzer process spawned by [RustAnalyzerProvider] even though the process
+ * itself is started and owned by the host whenever it needs a language server for a .rs file.
+ *
+ * The server's stderr is drained here (so the log pipe can never fill up and stall the process)
+ * and every line is forwarded to Klyx's LSP log via the [LanguageClient]'s `window/logMessage` —
+ * the host renders those entries in its own LSP activity UI. Session markers (started/exited)
+ * go through the same channel.
  *
  * Indexing is detected by scanning the server's stdout for LSP `$/progress` notifications
  * (token `rustAnalyzer/cachePriming`, title "Indexing") as the host reads it. Klyx advertises
@@ -44,8 +49,6 @@ object RustAnalyzerSession {
     var indexingProgress by mutableStateOf<String?>(null)
         private set
 
-    val logs: SnapshotStateList<String> = mutableStateListOf()
-
     private val indexingRegex = Regex("indexing[:\\s]+(\\d+)/(\\d+)")
     private val progressValueRegex = Regex("(\\d+)\\s*/\\s*(\\d+)")
 
@@ -60,11 +63,16 @@ object RustAnalyzerSession {
     fun wrapStdout(source: InputStream): InputStream =
         ProgressScanInputStream(source) { token, kind, message -> onProgressEvent(token, kind, message) }
 
-    fun attach(handle: ProcessHandle, scope: CoroutineScope, drainStderr: Boolean = false) {
+    suspend fun attach(
+        handle: ProcessHandle,
+        scope: CoroutineScope,
+        client: LanguageClient,
+        drainStderr: Boolean = false,
+    ) {
         current = handle
         watchdogScope = scope
         status = LspStatus.Running(handle.pid)
-        appendLog("--- started (pid ${handle.pid}) ---")
+        client.logMessage(LogMessageParams(MessageType.Info, "--- started (pid ${handle.pid}) ---"))
 
         if (!drainStderr) return
 
@@ -73,28 +81,20 @@ object RustAnalyzerSession {
         // pipe it fills up and the process blocks on its next write, freezing the server.
         scope.launch(Dispatchers.IO) {
             try {
-                handle.stderr.bufferedReader().forEachLine { line -> onLine(line) }
+                handle.stderr.bufferedReader().forEachLine { line -> onLine(client, line) }
             } catch (_: Exception) {
                 // Stream closed because the process died or was killed; fall through to status update.
             } finally {
                 stopIndexing()
                 val code = exitCodeOf(handle)
                 status = LspStatus.Exited(code)
-                appendLog("--- exited (code $code) ---")
+                client.logMessage(LogMessageParams(MessageType.Info, "--- exited (code $code) ---"))
             }
         }
     }
 
     fun stop() {
         current?.kill()
-    }
-
-    fun log(line: String) {
-        appendLog(line)
-    }
-
-    fun clearLogs() {
-        logs.clear()
     }
 
     fun stopIndexing() {
@@ -104,8 +104,8 @@ object RustAnalyzerSession {
         indexingProgress = null
     }
 
-    private fun onLine(line: String) {
-        appendLog(line)
+    private suspend fun onLine(client: LanguageClient, line: String) {
+        client.logMessage(LogMessageParams(MessageType.Log, line))
         val match = indexingRegex.find(line) ?: return
         val currentCount = match.groupValues[1].toIntOrNull() ?: return
         val total = match.groupValues[2].toIntOrNull() ?: return
@@ -167,10 +167,6 @@ object RustAnalyzerSession {
         }
     }
 
-    private fun appendLog(line: String) {
-        if (logs.size > 500) logs.removeAt(0)
-        logs.add(line)
-    }
 }
 
 /**

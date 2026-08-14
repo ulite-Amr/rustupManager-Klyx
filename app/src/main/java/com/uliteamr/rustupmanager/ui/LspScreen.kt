@@ -1,8 +1,6 @@
 package com.uliteamr.rustupmanager.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -23,39 +20,27 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.klyx.api.plugin.PluginSettings
 import com.uliteamr.rustupmanager.icons.Close
-import com.uliteamr.rustupmanager.icons.Delete
 import com.uliteamr.rustupmanager.icons.Server
 import com.uliteamr.rustupmanager.lsp.LspStatus
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerSession
 import com.uliteamr.rustupmanager.settings.SettingsKeys
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val clipboard = LocalClipboardManager.current
 
     val status = RustAnalyzerSession.status
     val isIndexing = RustAnalyzerSession.isIndexing
     val indexingProgress = RustAnalyzerSession.indexingProgress
-    val logs = RustAnalyzerSession.logs
 
     var reverseCompletion by remember { mutableStateOf(settings.getBoolean(SettingsKeys.reverseCompletion, false)) }
     var indexingToast by remember { mutableStateOf(settings.getBoolean(SettingsKeys.indexingToast, true)) }
     var toolbarAutoHide by remember { mutableStateOf(settings.getBoolean(SettingsKeys.toolbarAutoHide, false)) }
-
-    var errorsOnly by remember { mutableStateOf(false) }
-    var copied by remember { mutableStateOf(false) }
-
-    val visibleLogs = if (errorsOnly) logs.filter(::isErrorLine) else logs
 
     Column(modifier = Modifier.fillMaxSize()) {
         ScreenHeader(title = "Language Server", onBack = onBack)
@@ -77,30 +62,17 @@ fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
                 },
             )
 
-            Row(
+            OutlinedButton(
+                onClick = { RustAnalyzerSession.stop() },
+                enabled = status is LspStatus.Running,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
-                OutlinedButton(
-                    onClick = { RustAnalyzerSession.stop() },
-                    enabled = status is LspStatus.Running,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Icon(Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Stop")
-                }
-                Button(
-                    onClick = { RustAnalyzerSession.clearLogs() },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Clear logs")
-                }
+                Icon(Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Stop")
             }
 
             Text(
@@ -195,44 +167,6 @@ fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
                 enabled = false,
             )
         }
-
-        SectionLabel("Logs")
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SegmentedChoice(
-                options = listOf("All", "Errors"),
-                selected = if (errorsOnly) "Errors" else "All",
-                onSelect = { errorsOnly = it == "Errors" },
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = {
-                    clipboard.setText(AnnotatedString(visibleLogs.joinToString("\n")))
-                    copied = true
-                    scope.launch {
-                        delay(2_000)
-                        copied = false
-                    }
-                },
-                enabled = visibleLogs.isNotEmpty(),
-            ) {
-                Text(if (copied) "Copied" else "Copy")
-            }
-        }
-        LogPanel(
-            lines = visibleLogs,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 12.dp),
-            minHeight = 120.dp,
-        )
     }
 }
 
