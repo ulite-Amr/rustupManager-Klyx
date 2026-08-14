@@ -24,7 +24,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -292,7 +291,7 @@ private fun NotInstalledBody(
             }
         }
         if (busy) {
-            LinearProgressIndicator(
+            ExpressiveLinearProgressIndicator(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -334,7 +333,7 @@ private fun ReadyBody(
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             if (busy) {
-                LinearProgressIndicator(
+                ExpressiveLinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp),

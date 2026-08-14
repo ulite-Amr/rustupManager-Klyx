@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -219,7 +221,15 @@ fun AppSwitch(checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boole
 
 @Composable
 fun InlineSpinner(modifier: Modifier = Modifier.size(18.dp), strokeWidth: Dp = 2.dp) {
-    CircularProgressIndicator(modifier = modifier, strokeWidth = strokeWidth)
+    CircularProgressIndicator(modifier = modifier, strokeWidth = strokeWidth, strokeCap = StrokeCap.Round)
+}
+
+@Composable
+fun ExpressiveLinearProgressIndicator(modifier: Modifier = Modifier) {
+    LinearProgressIndicator(
+        strokeCap = StrokeCap.Round,
+        modifier = modifier,
+    )
 }
 
 @Composable
