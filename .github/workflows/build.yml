@@ -12,6 +12,9 @@ permissions:
   contents: write
   packages: read
 
+env:
+  KLYX_GHP_TOKEN: ${{ secrets.KLYX_GHP_READ_TOKEN }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,7 +39,11 @@ jobs:
 
       - name: Verify klyx-api snapshot from GitHub Packages
         run: |
-          curl -s -u "$GITHUB_ACTOR:$GITHUB_TOKEN" -o /tmp/klyx-api.aar "https://maven.pkg.github.com/ulite-Amr/klyx/io/github/klyx-dev/klyx-api/4.2.0-SNAPSHOT/klyx-api-4.2.0-SNAPSHOT.aar"
+          if ! curl -fsS -u "ulite-Amr:$KLYX_GHP_TOKEN" -o /tmp/klyx-api.aar "https://maven.pkg.github.com/ulite-Amr/klyx/io/github/klyx-dev/klyx-api/4.2.0-SNAPSHOT/klyx-api-4.2.0-SNAPSHOT.aar"; then
+            echo "::error::could not fetch klyx-api snapshot from GitHub Packages"
+            cat /tmp/klyx-api.aar 2>/dev/null || true
+            exit 1
+          fi
           ls -la /tmp/klyx-api.aar
           file /tmp/klyx-api.aar
           unzip -o -q /tmp/klyx-api.aar classes.jar -d /tmp/aar || true

@@ -1,12 +1,13 @@
 pluginManagement {
     repositories {
-        val ghUser = System.getenv("GITHUB_ACTOR")
-        val ghToken = System.getenv("GITHUB_TOKEN")
-        if (!ghUser.isNullOrBlank() && !ghToken.isNullOrBlank()) {
+        // KLYX_GHP_TOKEN is exported by build.yml from the KLYX_GHP_READ_TOKEN
+        // repository secret (fine-grained PAT, read-only Packages on ulite-Amr/klyx).
+        val ghToken = System.getenv("KLYX_GHP_TOKEN")
+        if (!ghToken.isNullOrBlank()) {
             maven {
                 url = uri("https://maven.pkg.github.com/ulite-Amr/klyx")
                 credentials {
-                    username = ghUser
+                    username = "ulite-Amr"
                     password = ghToken
                 }
                 content {
@@ -34,13 +35,12 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        val ghUser = System.getenv("GITHUB_ACTOR")
-        val ghToken = System.getenv("GITHUB_TOKEN")
-        if (!ghUser.isNullOrBlank() && !ghToken.isNullOrBlank()) {
+        val ghToken = System.getenv("KLYX_GHP_TOKEN")
+        if (!ghToken.isNullOrBlank()) {
             maven {
                 url = uri("https://maven.pkg.github.com/ulite-Amr/klyx")
                 credentials {
-                    username = ghUser
+                    username = "ulite-Amr"
                     password = ghToken
                 }
                 content {
