@@ -1,14 +1,15 @@
-val ghActor = providers.environmentVariable("GITHUB_ACTOR")
-val ghToken = providers.environmentVariable("GITHUB_TOKEN")
+val hasGhCredentials =
+    providers.environmentVariable("GITHUB_ACTOR").isPresent &&
+        providers.environmentVariable("GITHUB_TOKEN").isPresent
 
 pluginManagement {
     repositories {
-        if (ghActor.isPresent && ghToken.isPresent) {
+        if (hasGhCredentials) {
             maven {
                 url = uri("https://maven.pkg.github.com/ulite-Amr/klyx")
                 credentials {
-                    username = ghActor.get()
-                    password = ghToken.get()
+                    username = providers.environmentVariable("GITHUB_ACTOR").getOrElse("")
+                    password = providers.environmentVariable("GITHUB_TOKEN").getOrElse("")
                 }
                 content {
                     includeGroup("io.github.klyx-dev")
@@ -35,12 +36,12 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        if (ghActor.isPresent && ghToken.isPresent) {
+        if (hasGhCredentials) {
             maven {
                 url = uri("https://maven.pkg.github.com/ulite-Amr/klyx")
                 credentials {
-                    username = ghActor.get()
-                    password = ghToken.get()
+                    username = providers.environmentVariable("GITHUB_ACTOR").getOrElse("")
+                    password = providers.environmentVariable("GITHUB_TOKEN").getOrElse("")
                 }
                 content {
                     includeGroup("io.github.klyx-dev")
