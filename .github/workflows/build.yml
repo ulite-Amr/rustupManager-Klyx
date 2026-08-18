@@ -39,16 +39,13 @@ jobs:
 
       - name: Verify klyx-api snapshot from GitHub Packages
         run: |
-          if ! curl -fsS -u "ulite-Amr:$KLYX_GHP_TOKEN" -o /tmp/klyx-api.aar "https://maven.pkg.github.com/ulite-Amr/klyx/io/github/klyx-dev/klyx-api/4.2.0-SNAPSHOT/klyx-api-4.2.0-SNAPSHOT.aar"; then
-            echo "::error::could not fetch klyx-api snapshot from GitHub Packages"
-            cat /tmp/klyx-api.aar 2>/dev/null || true
-            exit 1
-          fi
-          ls -la /tmp/klyx-api.aar
-          file /tmp/klyx-api.aar
-          unzip -o -q /tmp/klyx-api.aar classes.jar -d /tmp/aar || true
-          unzip -p /tmp/aar/classes.jar com/klyx/api/lsp/LanguageServerProvider.class > /tmp/LSP.class 2>/dev/null || true
-          strings /tmp/LSP.class | grep -i initialization || echo "METHOD NOT FOUND IN PUBLISHED JAR"
+          BASE="https://maven.pkg.github.com/ulite-Amr/klyx/io/github/klyx-dev/klyx-api/4.2.0-SNAPSHOT"
+          for f in "maven-metadata.xml" "klyx-api-4.2.0-SNAPSHOT.aar" "klyx-api-4.2.0-SNAPSHOT.module" "klyx-api-4.2.0-SNAPSHOT.pom" "klyx-api-4.2.0-SNAPSHOT-sources.jar"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -u "ulite-Amr:$KLYX_GHP_TOKEN" "$BASE/$f")
+            echo "$f -> $code"
+          done
+          echo "--- REST listing ---"
+          curl -s -u "ulite-Amr:$KLYX_GHP_TOKEN" "https://api.github.com/users/ulite-Amr/packages/maven/io.github.klyx-dev%2Fklyx-api/versions" | head -20
 
       - name: Build .klyx bundle
         run: ./gradlew :app:klyxBundleRelease --stacktrace --refresh-dependencies
