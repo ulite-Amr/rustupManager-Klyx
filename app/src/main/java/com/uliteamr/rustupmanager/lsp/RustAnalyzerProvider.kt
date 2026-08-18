@@ -34,10 +34,20 @@ class RustAnalyzerProvider(
 ) : LanguageServerProvider {
 
     /**
-     * Test overrides sent in the `initialize` request: binding-mode hints
-     * (off by default) are enabled so their presence in the editor proves the
-     * options actually reached rust-analyzer, and only the current target is
-     * checked to keep indexing lighter on-device.
+     * Initialization options sent in the `initialize` request. The original goal
+     * behind the initializationOptions SDK feature: rust-analyzer's defaults only
+     * surface semantic diagnostics, so macro-expansion errors and cargo-check
+     * results never appear in the editor. These options enable the full set:
+     *
+     * - diagnostics.experimental.enable - macro-expansion diagnostics
+     *   (the main reason this feature exists)
+     * - checkOnSave.enable - run cargo check on save, so the complete
+     *   diagnostic set (not just semantic) is reported
+     * - check.allTargets / checkOnSave.allTargets - only the current target is
+     *   checked, keeping indexing and check runs lighter on-device
+     * - inlayHints.bindingModeHints.enable - binding-mode hints (off by
+     *   default); kept enabled as the visible proof that the options reached
+     *   rust-analyzer
      *
      * Built with JsonObject/JsonPrimitive constructors on purpose: the host's
      * release APK is R8-minified and prunes JsonObjectBuilder/JsonElementBuildersKt
@@ -47,6 +57,18 @@ class RustAnalyzerProvider(
     override fun initializationOptions(): LSPAny = JsonObject(
         mapOf(
             "check" to JsonObject(mapOf("allTargets" to JsonPrimitive(false))),
+            "diagnostics" to JsonObject(
+                mapOf(
+                    "enable" to JsonPrimitive(true),
+                    "experimental" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
+                )
+            ),
+            "checkOnSave" to JsonObject(
+                mapOf(
+                    "enable" to JsonPrimitive(true),
+                    "allTargets" to JsonPrimitive(false)
+                )
+            ),
             "inlayHints" to JsonObject(
                 mapOf(
                     "bindingModeHints" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
