@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/initialization-options]
     tags: ["v*"]
   pull_request:
     branches: [main]
@@ -10,6 +10,10 @@ on:
 
 permissions:
   contents: write
+  packages: read
+
+env:
+  KLYX_GHP_TOKEN: ${{ secrets.KLYX_GHP_READ_TOKEN }}
 
 jobs:
   build:
