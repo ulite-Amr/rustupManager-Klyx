@@ -34,9 +34,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build .klyx bundle
-        run: ./gradlew :app:klyxBundleRelease --stacktrace --refresh-dependencies
-
       - name: Verify klyx-api snapshot from GitHub Packages
         run: |
           curl -s -u "$GITHUB_ACTOR:$GITHUB_TOKEN" -o /tmp/klyx-api.aar "https://maven.pkg.github.com/ulite-Amr/klyx/io/github/klyx-dev/klyx-api/4.2.0-SNAPSHOT/klyx-api-4.2.0-SNAPSHOT.aar"
@@ -45,7 +42,9 @@ jobs:
           unzip -o -q /tmp/klyx-api.aar classes.jar -d /tmp/aar || true
           unzip -p /tmp/aar/classes.jar com/klyx/api/lsp/LanguageServerProvider.class > /tmp/LSP.class 2>/dev/null || true
           strings /tmp/LSP.class | grep -i initialization || echo "METHOD NOT FOUND IN PUBLISHED JAR"
-          ./gradlew :app:dependencies --configuration compileReleaseClasspath --refresh-dependencies 2>/dev/null | grep -i "klyx" | head -5
+
+      - name: Build .klyx bundle
+        run: ./gradlew :app:klyxBundleRelease --stacktrace --refresh-dependencies
 
       - name: Locate bundle
         id: bundle
