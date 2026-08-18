@@ -35,7 +35,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build .klyx bundle
-        run: ./gradlew :app:klyxBundleRelease --stacktrace
+        run: ./gradlew :app:klyxBundleRelease --stacktrace --refresh-dependencies
 
       - name: Locate bundle
         id: bundle
