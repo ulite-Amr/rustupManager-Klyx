@@ -1,5 +1,9 @@
 [versions]
 klyx-snapshot = "4.2.0-SNAPSHOT"
+kotlinx-serialization = "1.11.0"
+
+[libraries]
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 
 [plugins]
 klyx = { id = "io.github.klyx-dev.compiler.plugin", version.ref = "klyx-snapshot" }
