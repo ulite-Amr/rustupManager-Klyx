@@ -14,8 +14,8 @@ import com.uliteamr.rustupmanager.settings.SettingsKeys
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Spawns rust-analyzer by its bare command name rather than an absolute path. Klyx resolves a
@@ -38,13 +38,22 @@ class RustAnalyzerProvider(
      * (off by default) are enabled so their presence in the editor proves the
      * options actually reached rust-analyzer, and only the current target is
      * checked to keep indexing lighter on-device.
+     *
+     * Built with JsonObject/JsonPrimitive constructors on purpose: the host's
+     * release APK is R8-minified and prunes JsonObjectBuilder/JsonElementBuildersKt
+     * (nothing in the host references them), so the buildJsonObject/put API would
+     * fail at runtime with NoClassDefFoundError.
      */
-    override fun initializationOptions(): LSPAny = buildJsonObject {
-        put("check", buildJsonObject { put("allTargets", false) })
-        put("inlayHints", buildJsonObject {
-            put("bindingModeHints", buildJsonObject { put("enable", true) })
-        })
-    }
+    override fun initializationOptions(): LSPAny = JsonObject(
+        mapOf(
+            "check" to JsonObject(mapOf("allTargets" to JsonPrimitive(false))),
+            "inlayHints" to JsonObject(
+                mapOf(
+                    "bindingModeHints" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
+                )
+            )
+        )
+    )
 
     override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {
         try {
