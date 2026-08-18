@@ -6,6 +6,10 @@ klyx {
     outputDirectory = rootProject.file("output")
 }
 
+dependencies {
+    implementation(libs.kotlinx.serialization.json)
+}
+
 android {
     namespace = "com.uliteamr.rustupmanager"
 

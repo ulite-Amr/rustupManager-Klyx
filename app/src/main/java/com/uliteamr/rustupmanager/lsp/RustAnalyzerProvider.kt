@@ -9,10 +9,13 @@ import com.klyx.lsp.LogMessageParams
 import com.klyx.lsp.MessageType
 import com.klyx.lsp.server.LanguageClient
 import com.klyx.lsp.server.LanguageServer
+import com.klyx.lsp.types.LSPAny
 import com.uliteamr.rustupmanager.settings.SettingsKeys
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Spawns rust-analyzer by its bare command name rather than an absolute path. Klyx resolves a
@@ -29,6 +32,19 @@ class RustAnalyzerProvider(
     private val scope: CoroutineScope,
     private val settings: PluginSettings,
 ) : LanguageServerProvider {
+
+    /**
+     * Test overrides sent in the `initialize` request: binding-mode hints
+     * (off by default) are enabled so their presence in the editor proves the
+     * options actually reached rust-analyzer, and only the current target is
+     * checked to keep indexing lighter on-device.
+     */
+    override fun initializationOptions(): LSPAny = buildJsonObject {
+        put("check", buildJsonObject { put("allTargets", false) })
+        put("inlayHints", buildJsonObject {
+            put("bindingModeHints", buildJsonObject { put("enable", true) })
+        })
+    }
 
     override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {
         try {
