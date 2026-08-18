@@ -40,10 +40,21 @@ jobs:
       - name: Verify klyx-api snapshot from GitHub Packages
         run: |
           BASE="https://maven.pkg.github.com/ulite-Amr/klyx/io/github/klyx-dev/klyx-api/4.2.0-SNAPSHOT"
-          curl -s -u "ulite-Amr:$KLYX_GHP_TOKEN" "$BASE/maven-metadata.xml" | tee /tmp/meta.xml
+          curl -s -u "ulite-Amr:$KLYX_GHP_TOKEN" "$BASE/maven-metadata.xml" | tee /tmp/meta.xml > /dev/null
           SNAPSHOT_VER=$(grep -oP '(?<=<value>)[^<]+(?=</value>)' /tmp/meta.xml | head -1)
           echo "resolved snapshot version: $SNAPSHOT_VER"
-          curl -fsS -u "ulite-Amr:$KLYX_GHP_TOKEN" -o /tmp/klyx-api.aar "$BASE/../$SNAPSHOT_VER/klyx-api-$SNAPSHOT_VER.aar"
+          for u in \
+            "$BASE/../$SNAPSHOT_VER/klyx-api-$SNAPSHOT_VER.aar" \
+            "$BASE/klyx-api-$SNAPSHOT_VER.aar" \
+            "$BASE/klyx-api-4.2.0-SNAPSHOT.aar" \
+            "$BASE/../$SNAPSHOT_VER/klyx-api-4.2.0-SNAPSHOT.aar" \
+            "$BASE/../4.2.0-SNAPSHOT/klyx-api-$SNAPSHOT_VER.aar"; do
+            echo "== $u"
+            code=$(curl -s -o /tmp/probe.out -w "%{http_code}" -u "ulite-Amr:$KLYX_GHP_TOKEN" "$u")
+            echo "   -> $code"
+            if [ "$code" = "200" ]; then cp /tmp/probe.out /tmp/klyx-api.aar; fi
+            if [ "$code" != "200" ]; then head -c 300 /tmp/probe.out; echo; fi
+          done
           ls -la /tmp/klyx-api.aar
           file /tmp/klyx-api.aar
           unzip -o -q /tmp/klyx-api.aar classes.jar -d /tmp/aar || true
