@@ -7,7 +7,11 @@ klyx {
 }
 
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
+    // The host app provides kotlinx-serialization at runtime (same as klyx-api).
+    // Bundling it here would load a second copy of JsonElement/JsonObject and
+    // crash LSP startup with a ClassCastException once LSPAny (= JsonElement)
+    // crosses the plugin/host boundary.
+    compileOnly(libs.kotlinx.serialization.json)
 }
 
 android {
