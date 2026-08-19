@@ -5,6 +5,27 @@ All notable changes to Rustup Manager are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-19
+
+### Added
+
+- **Custom initialization options** — define your own keys for rust-analyzer's `initialize` request (boolean or free-text values), merged after the built-in toggles, from **Feature Parameters and Initialize**.
+- **Raw options JSON** — paste a complete JSON object to send to rust-analyzer verbatim; it overrides every other option (with live validation of the object).
+- **Real download progress** — every install operation (rustup, toolchains, components, targets, rust-analyzer builds) now reports percent and downloaded/total bytes instead of an indeterminate spinner.
+- **Multiline text fields** — the styling for dashboard input fields now has a multiline variant used by the raw-JSON editor.
+
+### Changed
+
+- **Language server card** — one vertical card with `rustup | versions` sources; **Latest stable** and **nightly** are pinned at the top of the release list and the separate versions screen is gone.
+- **Single active server source** — "Use" now switches exclusively: taking a GitHub version removes the rustup component, and taking the rustup component removes the managed binary, so both can never fight.
+- **Feature Parameters card** moved to the top of the LSP screen, and the four toggle cards now carry distinct icons.
+- **Dashboard text fields** — Material 3 tonal fill with a primary-color focus border.
+- **Plugin icon** is only shown in the store; the toolbar action no longer duplicates it.
+
+### Fixed
+
+- **Scroll state** — scrolling away from the dashboard lists no longer resets typed input or re-fetches (and blanks) the rust-analyzer release list; fetching now lives in the screen body instead of inside the scrollable item.
+
 ## [1.1.0] - 2026-08-14
 
 ### Added
