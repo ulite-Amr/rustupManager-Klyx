@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -312,6 +313,10 @@ fun AppTextField(
         if (textFieldState.text.toString() != value) {
             textFieldState.setTextAndPlaceCursorAtEnd(value)
         }
+    }
+    LaunchedEffect(textFieldState, value) {
+        snapshotFlow { textFieldState.text.toString() }
+            .collect { newText -> if (newText != value) onValueChange(newText) }
     }
     val fieldStyle = MaterialTheme.typography.bodyMedium.copy(
         color = MaterialTheme.colorScheme.onSurface,

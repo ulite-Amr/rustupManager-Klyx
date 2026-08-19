@@ -136,7 +136,7 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 description = "Report macro-expansion errors and warnings (experimental diagnostics)",
                 trailing = {
                     AppSwitch(
-                        checked = boolAt(true, "diagnostics", "experimental", "enable"),
+                        checked = boolAt(false, "diagnostics", "experimental", "enable"),
                         onCheckedChange = { on ->
                             if (on) {
                                 commit(
@@ -163,7 +163,7 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 description = "Run cargo check when a file is saved so all diagnostics (not just semantic) appear",
                 trailing = {
                     AppSwitch(
-                        checked = boolAt(true, "checkOnSave", "enable"),
+                        checked = boolAt(false, "checkOnSave", "enable"),
                         onCheckedChange = { on ->
                             if (on) {
                                 commit(
@@ -201,7 +201,7 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 description = "Show binding-mode inlay hints (mut/ref prefixes) in the editor",
                 trailing = {
                     AppSwitch(
-                        checked = boolAt(true, "inlayHints", "bindingModeHints", "enable"),
+                        checked = boolAt(false, "inlayHints", "bindingModeHints", "enable"),
                         onCheckedChange = { on ->
                             if (on) {
                                 commit(
