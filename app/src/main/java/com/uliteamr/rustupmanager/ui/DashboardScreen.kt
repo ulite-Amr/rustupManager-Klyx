@@ -68,6 +68,7 @@ import com.uliteamr.rustupmanager.rustup.DownloadSample
 import com.uliteamr.rustupmanager.rustup.GithubRelease
 import com.uliteamr.rustupmanager.rustup.LspSource
 import com.uliteamr.rustupmanager.rustup.LspState
+import com.uliteamr.rustupmanager.rustup.ManagedLspVersion
 import com.uliteamr.rustupmanager.rustup.OpProgress
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.rustup.RustupState
@@ -908,7 +909,7 @@ private fun AddTargetRow(
 fun ReleaseVersionRow(
     lspManager: LspManager,
     release: GithubRelease,
-    managed: Toolchain?,
+    managed: ManagedLspVersion?,
     title: String? = null,
     subtitle: String? = null,
     icon: ImageVector? = null,
