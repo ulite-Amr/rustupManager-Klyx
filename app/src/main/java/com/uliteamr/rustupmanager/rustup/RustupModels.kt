@@ -27,10 +27,21 @@ data class GithubRelease(
     val isNightly: Boolean,
 )
 
+/** A live download sample parsed from rustup/curl output: a fraction 0..1 (null while
+ *  indeterminate) plus optional byte counts ([downloadedBytes] alone, or both when the
+ *  total is known). */
+data class DownloadSample(
+    val fraction: Float? = null,
+    val downloadedBytes: Long? = null,
+    val totalBytes: Long? = null,
+)
+
 /** Live progress of a single operation. [fraction] is 0..1, or null while indeterminate. */
 data class OpProgress(
     val label: String,
     val fraction: Float?,
+    val downloadedBytes: Long? = null,
+    val totalBytes: Long? = null,
 )
 
 data class LspState(

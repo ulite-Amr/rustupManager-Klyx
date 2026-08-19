@@ -56,6 +56,7 @@ import com.uliteamr.rustupmanager.icons.Refresh
 import com.uliteamr.rustupmanager.icons.Server
 import com.uliteamr.rustupmanager.icons.Terminal
 import com.uliteamr.rustupmanager.icons.Warning
+import com.uliteamr.rustupmanager.rustup.DownloadSample
 import com.uliteamr.rustupmanager.rustup.LspChannel
 import com.uliteamr.rustupmanager.rustup.LspSource
 import com.uliteamr.rustupmanager.rustup.LspState
@@ -76,7 +77,7 @@ private fun runOp(
     progress: MutableState<OpProgress?>,
     label: String,
     onDone: suspend () -> Unit,
-    action: suspend (onLine: (String) -> Unit, onProgress: (Float?) -> Unit) -> Boolean,
+    action: suspend (onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit) -> Boolean,
 ) {
     scope.launch {
         progress.value = OpProgress(label, null)
@@ -84,7 +85,7 @@ private fun runOp(
         try {
             val ok = action(
                 { line -> logger.info(LOG_TAG, line) },
-                { fraction -> progress.value = OpProgress(label, fraction) },
+                { sample -> progress.value = OpProgress(label, sample.fraction, sample.downloadedBytes, sample.totalBytes) },
             )
             if (ok) logger.info(LOG_TAG, "done") else logger.warn(LOG_TAG, "failed (see log above)")
         } catch (e: Exception) {

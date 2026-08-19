@@ -3,6 +3,7 @@ package com.uliteamr.rustupmanager.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.uliteamr.rustupmanager.rustup.DownloadSample
 import com.uliteamr.rustupmanager.rustup.GithubRelease
 import com.uliteamr.rustupmanager.rustup.LspState
 import com.uliteamr.rustupmanager.rustup.OpProgress
@@ -65,10 +66,12 @@ class LspManager(private val rustup: RustupController) {
         key: String,
         label: String,
         onLine: (String) -> Unit,
-        block: suspend (onLine: (String) -> Unit, onProgress: (Float?) -> Unit) -> Boolean,
+        block: suspend (onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit) -> Boolean,
     ): Boolean {
         tracker.set(key, OpProgress(label, null))
-        val ok = block(onLine) { fraction -> tracker.set(key, OpProgress(label, fraction)) }
+        val ok = block(onLine) { sample ->
+            tracker.set(key, OpProgress(label, sample.fraction, sample.downloadedBytes, sample.totalBytes))
+        }
         tracker.set(key, null)
         if (ok) refresh()
         return ok

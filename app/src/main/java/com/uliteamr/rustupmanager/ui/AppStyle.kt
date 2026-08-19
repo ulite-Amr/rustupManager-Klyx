@@ -251,16 +251,36 @@ fun OpProgressBar(
             ExpressiveLinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         Text(
-            text = if (fraction != null) {
-                "${(fraction * 100).roundToInt()}%"
-            } else {
-                progress?.label.orEmpty()
-            },
+            text = progressCaption(progress),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
         )
+    }
+}
+
+/** "43% · 21.3 MiB / 48.9 MiB" when the download size is known, falling back to the label. */
+private fun progressCaption(progress: com.uliteamr.rustupmanager.rustup.OpProgress?): String {
+    val progress = progress ?: return ""
+    val detail = buildString {
+        progress.fraction?.let { append("${(it * 100).roundToInt()}%") }
+        progress.downloadedBytes?.let { downloaded ->
+            if (isNotEmpty()) append(" · ")
+            append(formatBytes(downloaded))
+            progress.totalBytes?.let { total -> append(" / ").append(formatBytes(total)) }
+        }
+    }
+    return detail.ifEmpty { progress.label }
+}
+
+private fun formatBytes(bytes: Long): String {
+    val value = bytes.toDouble()
+    return when {
+        bytes >= 1L shl 30 -> "%.1f GiB".format(value / (1L shl 30))
+        bytes >= 1L shl 20 -> "%.1f MiB".format(value / (1L shl 20))
+        bytes >= 1L shl 10 -> "%.1f KiB".format(value / (1L shl 10))
+        else -> "$bytes B"
     }
 }
 
