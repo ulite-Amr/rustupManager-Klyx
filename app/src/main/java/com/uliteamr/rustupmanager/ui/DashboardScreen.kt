@@ -41,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -613,6 +614,8 @@ private fun VersionsLspTab(lspManager: LspManager, onShowAll: () -> Unit) {
                                 title = "Latest stable",
                                 subtitle = stable.tag,
                                 horizontalPadding = 0.dp,
+                                descriptionColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+                                activeColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
                         if (nightly != null) {
@@ -622,6 +625,8 @@ private fun VersionsLspTab(lspManager: LspManager, onShowAll: () -> Unit) {
                                 title = "nightly (rolling)",
                                 subtitle = nightly.tag,
                                 horizontalPadding = 0.dp,
+                                descriptionColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+                                activeColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
                     }
@@ -912,6 +917,8 @@ fun ReleaseVersionRow(
     title: String? = null,
     subtitle: String? = null,
     horizontalPadding: Dp = 16.dp,
+    descriptionColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    activeColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val scope = rememberCoroutineScope()
     val logger: Logger = rememberLogger()
@@ -943,11 +950,7 @@ fun ReleaseVersionRow(
                 Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (managed?.isActive == true) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = if (managed?.isActive == true) activeColor else descriptionColor,
                 )
             }
             when {

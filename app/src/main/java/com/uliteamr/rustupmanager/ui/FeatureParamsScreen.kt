@@ -2,11 +2,13 @@ package com.uliteamr.rustupmanager.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -59,6 +61,7 @@ private val KNOWN_KEYS = setOf("check", "diagnostics", "checkOnSave", "inlayHint
  * the bottom shows the same object live. Every change is persisted immediately and is sent
  * to rust-analyzer verbatim on the next server start.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -250,10 +253,10 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
                 )
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     listOf("bool", "text", "num", "object").forEach { type ->
                         FilterChip(
@@ -262,7 +265,14 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                             label = { Text(type) },
                         )
                     }
-                    Spacer(Modifier.weight(1f))
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     FilledTonalButton(
                         onClick = {
                             val key = newKey.trim()
@@ -292,9 +302,10 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                     placeholder = "{\"check\":{\"allTargets\":false}}",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp),
+                        .heightIn(min = 200.dp, max = 400.dp),
                     multiline = true,
                     monospace = true,
+                    wrapText = false,
                 )
                 if (jsonError != null) {
                     Text(
