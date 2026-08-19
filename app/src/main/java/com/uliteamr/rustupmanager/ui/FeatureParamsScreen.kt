@@ -305,7 +305,6 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                         .heightIn(min = 200.dp, max = 400.dp),
                     multiline = true,
                     monospace = true,
-                    wrapText = false,
                 )
                 if (jsonError != null) {
                     Text(
