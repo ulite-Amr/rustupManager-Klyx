@@ -41,8 +41,13 @@ class RustAnalyzerProvider(
      * first to use the `LanguageServerProvider.initializationOptions()` SDK hook,
      * originally to fix a real gap: rust-analyzer's defaults only surface semantic
      * diagnostics, so macro-expansion errors and cargo-check results never reached
-     * the editor. The options below enable the full set and are user-configurable
-     * from "Feature Parameters and Initialize" in the plugin's settings page.
+     * the editor.
+     *
+     * Since 1.2 the source of truth is a single JSON object the user edits live in
+     * "Feature Parameters and Initialize" (stored under SettingsKeys.rawInitOptions):
+     * when it exists and parses as an object, it is sent verbatim. Otherwise the
+     * legacy per-toggle keys (and the old custom-features list) are merged into the
+     * old shape, so installs that never opened the new screen keep working unchanged.
      *
      * Built with JsonObject/JsonPrimitive constructors on purpose: the host's
      * release APK is R8-minified and prunes JsonObjectBuilder/JsonElementBuildersKt
@@ -50,61 +55,6 @@ class RustAnalyzerProvider(
      * fail at runtime with NoClassDefFoundError.
      */
     override fun initializationOptions(): LSPAny {
-        val currentTargetOnly = settings.getBoolean(SettingsKeys.currentTargetOnly, true)
-        val options = buildMap {
-            put("check", JsonObject(mapOf("allTargets" to JsonPrimitive(!currentTargetOnly))))
-            if (settings.getBoolean(SettingsKeys.macroDiagnostics, true)) {
-                put(
-                    "diagnostics",
-                    JsonObject(
-                        mapOf(
-                            "enable" to JsonPrimitive(true),
-                            "experimental" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
-                        )
-                    )
-                )
-            }
-            if (settings.getBoolean(SettingsKeys.checkOnSave, true)) {
-                put(
-                    "checkOnSave",
-                    JsonObject(
-                        mapOf(
-                            "enable" to JsonPrimitive(true),
-                            "allTargets" to JsonPrimitive(!currentTargetOnly)
-                        )
-                    )
-                )
-            }
-            if (settings.getBoolean(SettingsKeys.bindingModeHints, true)) {
-                put(
-                    "inlayHints",
-                    JsonObject(
-                        mapOf(
-                            "bindingModeHints" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
-                        )
-                    )
-                )
-            }
-
-            // Custom features from "Feature Parameters and Initialize" override the toggles
-            // on name collision. Stored as a JSON array of {name, type, value}.
-            val custom = settings.getString(SettingsKeys.customInitOptions, "") ?: ""
-            if (custom.isNotBlank()) {
-                runCatching {
-                    val entries = (Json.parseToJsonElement(custom) as? JsonArray) ?: return@runCatching
-                    for (entry in entries) {
-                        val obj = entry as? JsonObject ?: continue
-                        val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: continue
-                        if (name.isBlank()) continue
-                        val type = (obj["type"] as? JsonPrimitive)?.contentOrNull ?: "boolean"
-                        val value = (obj["value"] as? JsonPrimitive)?.contentOrNull ?: ""
-                        put(name, if (type != "boolean") JsonPrimitive(value) else JsonPrimitive(value != "false"))
-                    }
-                }
-            }
-        }
-
-        // Raw JSON wins over everything: when present and a valid object, use it verbatim.
         val raw = settings.getString(SettingsKeys.rawInitOptions, "") ?: ""
         if (raw.isNotBlank()) {
             runCatching {
@@ -112,7 +62,61 @@ class RustAnalyzerProvider(
                 if (parsed is JsonObject) return parsed
             }
         }
-        return JsonObject(options)
+
+        val currentTargetOnly = settings.getBoolean(SettingsKeys.currentTargetOnly, true)
+        return JsonObject(
+            buildMap {
+                put("check", JsonObject(mapOf("allTargets" to JsonPrimitive(!currentTargetOnly))))
+                if (settings.getBoolean(SettingsKeys.macroDiagnostics, true)) {
+                    put(
+                        "diagnostics",
+                        JsonObject(
+                            mapOf(
+                                "enable" to JsonPrimitive(true),
+                                "experimental" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
+                            )
+                        )
+                    )
+                }
+                if (settings.getBoolean(SettingsKeys.checkOnSave, true)) {
+                    put(
+                        "checkOnSave",
+                        JsonObject(
+                            mapOf(
+                                "enable" to JsonPrimitive(true),
+                                "allTargets" to JsonPrimitive(!currentTargetOnly)
+                            )
+                        )
+                    )
+                }
+                if (settings.getBoolean(SettingsKeys.bindingModeHints, true)) {
+                    put(
+                        "inlayHints",
+                        JsonObject(
+                            mapOf(
+                                "bindingModeHints" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
+                            )
+                        )
+                    )
+                }
+
+                // Legacy custom features from before the live JSON editor: {name, type, value}.
+                val custom = settings.getString(SettingsKeys.customInitOptions, "") ?: ""
+                if (custom.isNotBlank()) {
+                    runCatching {
+                        val entries = (Json.parseToJsonElement(custom) as? JsonArray) ?: return@runCatching
+                        for (entry in entries) {
+                            val obj = entry as? JsonObject ?: continue
+                            val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: continue
+                            if (name.isBlank()) continue
+                            val type = (obj["type"] as? JsonPrimitive)?.contentOrNull ?: "boolean"
+                            val value = (obj["value"] as? JsonPrimitive)?.contentOrNull ?: ""
+                            put(name, if (type != "boolean") JsonPrimitive(value) else JsonPrimitive(value != "false"))
+                        }
+                    }
+                }
+            }
+        )
     }
 
     override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {
