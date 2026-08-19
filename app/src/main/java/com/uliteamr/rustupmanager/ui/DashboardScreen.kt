@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -332,6 +333,13 @@ private fun ReadyBody(
 
     LaunchedEffect(Unit) { lspManager.refresh() }
 
+    // Fetching lives here, not inside the card: the card sits in a LazyColumn item that is
+    // disposed when scrolled off-screen, so an effect inside it would re-fetch (and blank the
+    // list) every time the user scrolls back up.
+    LaunchedEffect(lspSource) {
+        if (lspSource == LspSource.Versions) lspManager.fetchReleases()
+    }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item { SectionLabel("Language server") }
         item {
@@ -363,7 +371,7 @@ private fun ReadyBody(
                 )
             }
         }
-        item {
+        item(key = "install-toolchain") {
             InstallToolchainRow(
                 rustup = rustup,
                 scope = scope,
@@ -393,7 +401,7 @@ private fun ReadyBody(
                 )
             }
         } else {
-            items(targets) { target ->
+            items(targets, key = { it }) { target ->
                 TargetRow(
                     target = target,
                     rustup = rustup,
@@ -403,7 +411,7 @@ private fun ReadyBody(
                 )
             }
         }
-        item {
+        item(key = "add-target") {
             AddTargetRow(
                 rustup = rustup,
                 scope = scope,
@@ -441,13 +449,6 @@ private fun LspSourceCard(
     onSelect: (LspSource) -> Unit,
     onOpenLsp: () -> Unit,
 ) {
-    LaunchedEffect(selected) {
-        when (selected) {
-            LspSource.Rustup -> Unit
-            LspSource.Versions -> lspManager.fetchReleases()
-        }
-    }
-
     SettingsCard(
         icon = Server,
         title = "Language server",
@@ -673,7 +674,7 @@ private fun InstallToolchainRow(
     logger: Logger,
     onDone: suspend () -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     val op = remember { mutableStateOf<OpProgress?>(null) }
     SettingsCard(
         title = "Install a toolchain",
@@ -808,7 +809,7 @@ private fun AddTargetRow(
     logger: Logger,
     onDone: suspend () -> Unit,
 ) {
-    var target by remember { mutableStateOf("") }
+    var target by rememberSaveable { mutableStateOf("") }
     val op = remember { mutableStateOf<OpProgress?>(null) }
     SettingsCard(
         title = "Add a target",
