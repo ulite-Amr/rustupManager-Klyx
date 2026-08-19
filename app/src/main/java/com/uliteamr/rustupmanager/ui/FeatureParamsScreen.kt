@@ -12,10 +12,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -241,39 +242,41 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
 
                 var newKey by rememberSaveable { mutableStateOf("") }
                 var newType by rememberSaveable { mutableStateOf("bool") }
-                Row(
+                AppTextField(
+                    value = newKey,
+                    onValueChange = { newKey = it },
+                    placeholder = "new key",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    AppTextField(
-                        value = newKey,
-                        onValueChange = { newKey = it },
-                        placeholder = "new key",
-                        modifier = Modifier.weight(1.1f),
-                    )
-                    SegmentedChoice(
-                        options = listOf("bool", "text", "num", "object"),
-                        selected = newType,
-                        onSelect = { newType = it },
-                        modifier = Modifier.weight(1.5f),
-                    )
-                }
-                OutlinedButton(
-                    onClick = {
-                        val key = newKey.trim()
-                        if (key.isNotBlank() && key !in KNOWN_KEYS) {
-                            commit(jsonObject.setPath(defaultFor(newType), key))
-                            newKey = ""
-                        }
-                    },
+                        .padding(vertical = 4.dp),
+                )
+                Row(
                     modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add parameter")
+                    listOf("bool", "text", "num", "object").forEach { type ->
+                        FilterChip(
+                            selected = newType == type,
+                            onClick = { newType = type },
+                            label = { Text(type) },
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    FilledTonalButton(
+                        onClick = {
+                            val key = newKey.trim()
+                            if (key.isNotBlank() && key !in KNOWN_KEYS) {
+                                commit(jsonObject.setPath(defaultFor(newType), key))
+                                newKey = ""
+                            }
+                        },
+                        enabled = newKey.isNotBlank(),
+                    ) {
+                        Icon(Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add")
+                    }
                 }
             }
 
@@ -338,19 +341,17 @@ private fun JsonKeyEditor(
                     RemoveButton(onRemove)
                 }
             } else if (content != null && element.isString) {
-                Row(
-                    modifier = rowModifier,
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(key, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Column(modifier = rowModifier) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(key, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        RemoveButton(onRemove)
+                    }
                     AppTextField(
                         value = content,
                         onValueChange = { onUpdate(JsonPrimitive(it)) },
                         placeholder = "value",
-                        modifier = Modifier.weight(1.4f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    RemoveButton(onRemove)
                 }
             } else if (content != null && content.toDoubleOrNull() != null) {
                 var draft by remember { mutableStateOf(content) }
@@ -358,12 +359,11 @@ private fun JsonKeyEditor(
                 LaunchedEffect(content) {
                     if (content != lastCommitted) draft = content
                 }
-                Row(
-                    modifier = rowModifier,
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(key, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Column(modifier = rowModifier) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(key, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        RemoveButton(onRemove)
+                    }
                     AppTextField(
                         value = draft,
                         onValueChange = { text ->
@@ -375,24 +375,21 @@ private fun JsonKeyEditor(
                             }
                         },
                         placeholder = "number",
-                        modifier = Modifier.weight(1.4f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    RemoveButton(onRemove)
                 }
             } else {
-                Row(
-                    modifier = rowModifier,
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(key, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Column(modifier = rowModifier) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(key, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        RemoveButton(onRemove)
+                    }
                     AppTextField(
                         value = content ?: "null",
                         onValueChange = { onUpdate(JsonPrimitive(it)) },
                         placeholder = "value",
-                        modifier = Modifier.weight(1.4f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    RemoveButton(onRemove)
                 }
             }
         }

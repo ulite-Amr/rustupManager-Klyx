@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.klyx.api.service.Logger
@@ -583,20 +586,43 @@ private fun VersionsLspTab(lspManager: LspManager, onShowAll: () -> Unit) {
                 val nightly = releases.firstOrNull { it.isNightly }
                 val others = releases.filter { it != stable && it != nightly }
 
-                SettingsCard(
-                    title = "Latest & nightly",
-                    description = "Pinned releases: the newest stable and the rolling nightly build",
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                 ) {
-                    Column {
+                    Column(modifier = Modifier.padding(vertical = 10.dp)) {
+                        Text(
+                            "Latest & nightly",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                        Text(
+                            "The newest stable and the rolling nightly build",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 4.dp),
+                        )
                         if (stable != null) {
                             ReleaseVersionRow(
                                 lspManager = lspManager,
                                 release = stable,
-                                title = "Latest stable · ${stable.tag}",
+                                title = "Latest stable",
+                                subtitle = stable.tag,
+                                horizontalPadding = 0.dp,
                             )
                         }
                         if (nightly != null) {
-                            ReleaseVersionRow(lspManager = lspManager, release = nightly)
+                            ReleaseVersionRow(
+                                lspManager = lspManager,
+                                release = nightly,
+                                title = "nightly (rolling)",
+                                subtitle = nightly.tag,
+                                horizontalPadding = 0.dp,
+                            )
                         }
                     }
                 }
@@ -884,6 +910,8 @@ fun ReleaseVersionRow(
     lspManager: LspManager,
     release: GithubRelease,
     title: String? = null,
+    subtitle: String? = null,
+    horizontalPadding: Dp = 16.dp,
 ) {
     val scope = rememberCoroutineScope()
     val logger: Logger = rememberLogger()
@@ -892,13 +920,19 @@ fun ReleaseVersionRow(
     val progress = lspManager.installProgress(release.tag)
 
     val displayTitle = title ?: if (release.isNightly) "nightly (rolling)" else release.tag
-    val description = when {
+    val stateText = when {
         managed?.isActive == true -> "In use"
         managed != null -> "Installed"
         else -> "Not installed"
     }
+    val description = buildString {
+        if (subtitle != null) {
+            append(subtitle).append(" \u00b7 ")
+        }
+        append(stateText)
+    }
 
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
