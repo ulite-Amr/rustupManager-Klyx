@@ -25,10 +25,8 @@ import com.klyx.api.ui.ScreenId
 import com.klyx.api.ui.ScreenRegistry
 import com.klyx.api.ui.ToolbarAction
 import com.klyx.api.ui.ToolbarCategory
-import com.klyx.api.ui.ToolbarIcon
 import com.klyx.api.ui.ToolbarRegistry
 import com.klyx.core.event.EventSubscription
-import com.uliteamr.rustupmanager.icons.Wrench
 import com.uliteamr.rustupmanager.lsp.LspStatus
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerProvider
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerSession
@@ -172,7 +170,6 @@ class RustupPlugin : KlyxPlugin {
     private fun createToolbarAction() = ToolbarAction(
         id = TOOLBAR_ACTION_ID,
         label = "Rust Toolchain",
-        icon = ToolbarIcon(Wrench),
         category = ToolbarCategory("Rust"),
         priority = 100,
         onClick = {
