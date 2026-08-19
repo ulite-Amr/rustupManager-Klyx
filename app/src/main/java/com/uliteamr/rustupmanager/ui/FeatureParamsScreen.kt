@@ -11,13 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,8 +25,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.klyx.api.plugin.PluginSettings
 import com.uliteamr.rustupmanager.icons.Add
@@ -233,15 +229,15 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 description = "Overrides every option above. Sent to rust-analyzer exactly as written "
                     + "when it is a valid JSON object",
             ) {
-                OutlinedTextField(
+                AppTextField(
                     value = rawJson,
                     onValueChange = ::saveRawJson,
-                    placeholder = { Text("{\"check\":{\"allTargets\":false}}") },
+                    placeholder = "{\"check\":{\"allTargets\":false}}",
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(160.dp),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    multiline = true,
+                    monospace = true,
                 )
                 if (jsonError != null) {
                     Text(
