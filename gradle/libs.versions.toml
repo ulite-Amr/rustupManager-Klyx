@@ -1,5 +1,5 @@
 [versions]
-klyx-snapshot = "4.2.0-SNAPSHOT"
+klyx-snapshot = "4.3.0-SNAPSHOT"
 kotlinx-serialization = "1.11.0"
 
 [libraries]
