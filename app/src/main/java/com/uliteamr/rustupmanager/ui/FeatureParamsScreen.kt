@@ -2,8 +2,6 @@ package com.uliteamr.rustupmanager.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +11,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
@@ -56,13 +55,14 @@ private val KNOWN_KEYS = setOf("check", "diagnostics", "checkOnSave", "inlayHint
  * Feature Parameters and Initialize — a live settings.json-style editor.
  *
  * The single source of truth is one JSON object (stored in [SettingsKeys.rawInitOptions]).
- * The four toggle cards read and write their own paths of that object, user parameters are
- * rendered as editable rows straight from the object (booleans as switches, strings and
- * numbers as text fields, nested objects/arrays as recursive rows), and the raw JSON box at
- * the bottom shows the same object live. Every change is persisted immediately and is sent
- * to rust-analyzer verbatim on the next server start.
+ * The four toggle cards and the custom-parameter rows read and write their own paths of that
+ * object directly — every switch flip, field edit, add, or remove updates [jsonObject]
+ * immediately, and the raw JSON box re-syncs live to show the same object right after. The raw
+ * JSON box itself is a free-typing draft: it does not push edits back into [jsonObject] on every
+ * keystroke (partial/invalid JSON while typing would otherwise flash errors and never resolve),
+ * only when Apply is pressed. Every applied change is persisted immediately and is sent to
+ * rust-analyzer verbatim on the next server start.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -136,7 +136,7 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 description = "Report macro-expansion errors and warnings (experimental diagnostics)",
                 trailing = {
                     AppSwitch(
-                        checked = boolAt(false, "diagnostics", "experimental", "enable"),
+                        checked = boolAt(true, "diagnostics", "experimental", "enable"),
                         onCheckedChange = { on ->
                             if (on) {
                                 commit(
@@ -163,7 +163,7 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 description = "Run cargo check when a file is saved so all diagnostics (not just semantic) appear",
                 trailing = {
                     AppSwitch(
-                        checked = boolAt(false, "checkOnSave", "enable"),
+                        checked = boolAt(true, "checkOnSave", "enable"),
                         onCheckedChange = { on ->
                             if (on) {
                                 commit(
@@ -201,7 +201,7 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 description = "Show binding-mode inlay hints (mut/ref prefixes) in the editor",
                 trailing = {
                     AppSwitch(
-                        checked = boolAt(false, "inlayHints", "bindingModeHints", "enable"),
+                        checked = boolAt(true, "inlayHints", "bindingModeHints", "enable"),
                         onCheckedChange = { on ->
                             if (on) {
                                 commit(
@@ -256,8 +256,8 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                 )
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     listOf("bool", "text", "num", "object").forEach { type ->
                         FilterChip(
@@ -266,14 +266,6 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                             label = { Text(type) },
                         )
                     }
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
                     FilledTonalButton(
                         onClick = {
                             val key = newKey.trim()
@@ -294,18 +286,20 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
             SectionLabel("Raw init options JSON")
             SettingsCard(
                 title = "Verbatim options object",
-                description = "The live object — edit it directly here. It is sent to rust-analyzer "
-                    + "exactly as shown; invalid edits are rejected and the last valid object is kept",
+                description = "The live object — edit it freely here, then press Apply. It is sent "
+                    + "to rust-analyzer exactly as shown; invalid JSON is rejected and the last "
+                    + "valid object is kept",
             ) {
                 AppTextField(
                     value = jsonDraft,
-                    onValueChange = ::applyDraft,
+                    onValueChange = { jsonDraft = it },
                     placeholder = "{\"check\":{\"allTargets\":false}}",
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 200.dp, max = 400.dp),
                     multiline = true,
                     monospace = true,
+                    wrapText = false,
                 )
                 if (jsonError != null) {
                     Text(
@@ -314,6 +308,18 @@ fun FeatureParamsScreen(settings: PluginSettings, onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 4.dp),
                     )
+                }
+                val dirty = jsonDraft != encode(jsonObject)
+                FilledTonalButton(
+                    onClick = { applyDraft(jsonDraft) },
+                    enabled = dirty,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                ) {
+                    Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (dirty) "Apply" else "Applied")
                 }
             }
         }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -300,6 +302,7 @@ fun AppTextField(
     enabled: Boolean = true,
     multiline: Boolean = false,
     monospace: Boolean = false,
+    wrapText: Boolean = true,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
@@ -307,22 +310,25 @@ fun AppTextField(
         color = MaterialTheme.colorScheme.onSurface,
         fontFamily = if (monospace) FontFamily.Monospace else null,
     )
+    val fieldModifier = modifier
+        .clip(FieldShape)
+        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+        .border(
+            width = if (focused) 2.dp else 1.dp,
+            color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+            shape = FieldShape,
+        )
+        .let { if (!wrapText) it.horizontalScroll(rememberScrollState()) else it }
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
         enabled = enabled,
         singleLine = !multiline,
+        softWrap = wrapText,
         textStyle = fieldStyle,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         interactionSource = interactionSource,
-        modifier = modifier
-            .clip(FieldShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                shape = FieldShape,
-            ),
+        modifier = fieldModifier,
         decorationBox = { innerTextField ->
             Box(
                 modifier = Modifier.padding(
