@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Column
@@ -38,6 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.replace
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -306,6 +308,13 @@ fun AppTextField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
+    val textFieldState = rememberTextFieldState(initialValue = value)
+    LaunchedEffect(value) {
+        if (textFieldState.text.toString() != value) {
+            textFieldState.edit { replace(0, length, value) }
+        }
+    }
+    val horizontalScrollState = rememberScrollState()
     val fieldStyle = MaterialTheme.typography.bodyMedium.copy(
         color = MaterialTheme.colorScheme.onSurface,
         fontFamily = if (monospace) FontFamily.Monospace else null,
@@ -318,18 +327,16 @@ fun AppTextField(
             color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
             shape = FieldShape,
         )
-        .let { if (!wrapText) it.horizontalScroll(rememberScrollState()) else it }
     BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
+        state = textFieldState,
         enabled = enabled,
-        singleLine = !multiline,
-        softWrap = wrapText,
         textStyle = fieldStyle,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         interactionSource = interactionSource,
         modifier = fieldModifier,
-        decorationBox = { innerTextField ->
+        maxLines = if (multiline) Int.MAX_VALUE else 1,
+        horizontalScrollState = if (wrapText) null else horizontalScrollState,
+        decorator = { innerTextField ->
             Box(
                 modifier = Modifier.padding(
                     horizontal = 16.dp,
@@ -337,7 +344,7 @@ fun AppTextField(
                 ),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                if (value.isEmpty()) {
+                if (textFieldState.text.isEmpty()) {
                     Text(
                         placeholder,
                         style = MaterialTheme.typography.bodyMedium.copy(
