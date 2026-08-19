@@ -505,19 +505,50 @@ private fun LspSourceCard(
 private fun RustupLspTab(lspManager: LspManager) {
     val scope = rememberCoroutineScope()
     val installed = lspManager.lsp.installedViaRustup
+    val rustupActive = lspManager.lsp.rustupActive
     val busy = lspManager.rustupBusy()
     val progress = lspManager.tracker.state("lsp:rustup:install").value
 
     Column(modifier = Modifier.padding(top = 12.dp)) {
         if (installed) {
-            OutlinedButton(
-                onClick = { scope.launch { lspManager.removeViaRustup { } } },
-                enabled = !busy,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Remove (rustup)")
+                if (rustupActive) {
+                    Icon(
+                        Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "In use",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    FilledTonalButton(
+                        onClick = { scope.launch { lspManager.useViaRustup { } } },
+                        enabled = !busy,
+                    ) {
+                        Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Use")
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+                OutlinedButton(
+                    onClick = { scope.launch { lspManager.removeViaRustup { } } },
+                    enabled = !busy,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Remove (rustup)")
+                }
             }
         } else {
             Button(onClick = { scope.launch { lspManager.installViaRustup { } } }, enabled = !busy) {
@@ -710,7 +741,8 @@ private fun VersionsLspTab(
 
 private fun statusLine(lsp: LspState): String = when {
     lsp.activeVersion != null -> "Using rust-analyzer ${lsp.activeVersion} (GitHub release)"
-    lsp.installedViaRustup -> "Using rustup component rust-analyzer"
+    lsp.rustupActive -> "Using rustup component rust-analyzer"
+    lsp.installedViaRustup -> "Installed via rustup — activate it with Use"
     else -> "Not installed yet"
 }
 

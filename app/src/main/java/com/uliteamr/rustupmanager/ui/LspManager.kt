@@ -45,10 +45,16 @@ class LspManager(private val rustup: RustupController) {
 
     fun installProgress(tag: String): OpProgress? = tracker.state("lsp:install:$tag").value
 
-    fun rustupBusy(): Boolean = tracker.state("lsp:rustup:install").value != null
+    fun rustupBusy(): Boolean =
+        tracker.state("lsp:rustup:install").value != null ||
+            tracker.state("lsp:rustup:use").value != null ||
+            tracker.state("lsp:rustup:remove").value != null
 
     suspend fun installViaRustup(onLine: (String) -> Unit): Boolean =
         runOp("lsp:rustup:install", "Install rust-analyzer via rustup", onLine) { l, p -> rustup.installLspViaRustup(l, p) }
+
+    suspend fun useViaRustup(onLine: (String) -> Unit): Boolean =
+        runOp("lsp:rustup:use", "Activate the rustup component rust-analyzer", onLine) { l, _ -> rustup.useViaRustup(l) }
 
     suspend fun removeViaRustup(onLine: (String) -> Unit): Boolean =
         runOp("lsp:rustup:remove", "Remove rust-analyzer via rustup", onLine) { l, _ -> rustup.removeLspViaRustup(l) }

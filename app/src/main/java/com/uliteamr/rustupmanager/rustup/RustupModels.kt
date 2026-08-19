@@ -44,10 +44,13 @@ data class OpProgress(
     val totalBytes: Long? = null,
 )
 
+/** LSP install state. Exactly one source is active at a time: [activeVersion] (a managed
+ *  GitHub release) when set, otherwise the rustup component when [rustupActive] is true. */
 data class LspState(
     val installedViaRustup: Boolean,
     val versions: List<ManagedLspVersion>,
     val activeVersion: String?,
+    val rustupActive: Boolean = false,
 )
 
 sealed interface RustupState {

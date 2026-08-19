@@ -154,8 +154,20 @@ class RustupController {
         val versions = installedTags.map { tag ->
             ManagedLspVersion(tag = tag, installed = true, isActive = tag == active)
         }
-        return LspState(installedViaRustup = viaRustup, versions = versions, activeVersion = active)
+        // Exactly one source is active at a time: a managed tag when the symlink exists,
+        // otherwise the rustup component when it is installed.
+        return LspState(
+            installedViaRustup = viaRustup,
+            versions = versions,
+            activeVersion = active,
+            rustupActive = active == null && viaRustup,
+        )
     }
+
+    /** Makes the rustup component the active source by dropping the managed symlink, so the
+     *  bare-name resolution falls back to the toolchain's rust-analyzer. */
+    suspend fun useViaRustup(onLine: (String) -> Unit): Boolean =
+        runStreaming(BASH, arrayOf("-lc", "rm -f $RA_BIN_LINK"), onLine)
 
     suspend fun installLspViaRustup(onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runRustup("component", "add", "rust-analyzer", onLine = onLine, onProgress = onProgress)
@@ -218,9 +230,19 @@ class RustupController {
         return runStreaming(BASH, arrayOf("-lc", script), onLine, onProgress)
     }
 
-    /** Points the active `rust-analyzer` (resolved as a bare name via ~/.local/bin) at [tag]. */
-    suspend fun useManagedLsp(tag: String, onLine: (String) -> Unit): Boolean =
-        runStreaming(BASH, arrayOf("-lc", "ln -sfn ../share/rust-analyzer/$tag/rust-analyzer $RA_BIN_LINK"), onLine)
+    /** Points the active `rust-analyzer` (resolved as a bare name via ~/.local/bin) at [tag].
+     *  Also removes the rustup component if present, so exactly one source is active and the
+     *  tag can never be shadowed by the toolchain's binary on PATH. */
+    suspend fun useManagedLsp(tag: String, onLine: (String) -> Unit): Boolean {
+        val script = """
+            ln -sfn ../share/rust-analyzer/$tag/rust-analyzer $RA_BIN_LINK
+            if $RUSTUP component list --installed 2>/dev/null | grep -q '^rust-analyzer'; then
+                echo "removing rustup component rust-analyzer so $tag stays the active source"
+                $RUSTUP component remove rust-analyzer
+            fi
+        """.trimIndent()
+        return runStreaming(BASH, arrayOf("-lc", script), onLine)
+    }
 
     /** Removes a managed version; if it was active, also drops the active link. */
     suspend fun removeManagedLsp(tag: String, onLine: (String) -> Unit): Boolean {
