@@ -5,7 +5,7 @@ All notable changes to Rustup Manager are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2026-08-19
+## [1.2.0] - 2026-08-20
 
 ### Added
 
@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Language server card** — one vertical card with `rustup | versions` sources; **Latest stable** and **nightly** are pinned at the top in their own card, and the separate versions screen became the Show-all page.
+- **Unified language server list** — the rustup/versions chips are gone; the rustup component row (with its own icon) and the GitHub releases now share a single list, with the latest stable and nightly pinned on top followed by a divider.
 - **Single active server source** — "Use" now switches exclusively: taking a GitHub version removes the rustup component, and taking the rustup component removes the managed binary, so both can never fight.
 - **Feature Parameters card** moved to the top of the LSP screen, and the four toggle cards now carry distinct icons.
 - **Dashboard text fields** — Material 3 tonal fill with a primary-color focus border.
@@ -27,8 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Text input on the new editor** — text fields were migrated to Compose's state-based `BasicTextField` API and now report edits back correctly: typing in the raw JSON box enables Apply, custom parameter rows commit live, and the "new key" field feeds the Add button.
+- **Toggle cards stuck ON** — switches no longer snap back to ON when their JSON block is removed; a missing block now shows the switch OFF.
 - **Scroll state** — scrolling away from the dashboard lists no longer resets typed input or re-fetches (and blanks) the rust-analyzer release list; fetching now lives in the screen body instead of inside the scrollable item.
 - **Custom features migration** — features added through the previous editor are merged into the new JSON object automatically on first open, and the legacy per-toggle keys keep working as a fallback until the new editor is opened.
+- **Build** — the plugin now builds against upstream `klyx` 4.3.0-SNAPSHOT from Maven Central (which ships the `initializationOptions()` SDK hook) instead of the private fork repository, and requires klyx 4.3.0+.
 
 ## [1.1.0] - 2026-08-14
 
