@@ -2,11 +2,9 @@ package com.uliteamr.rustupmanager.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -302,7 +300,6 @@ fun AppTextField(
     enabled: Boolean = true,
     multiline: Boolean = false,
     monospace: Boolean = false,
-    wrapText: Boolean = true,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
@@ -315,7 +312,6 @@ fun AppTextField(
         onValueChange = onValueChange,
         enabled = enabled,
         singleLine = !multiline,
-        softWrap = wrapText,
         textStyle = fieldStyle,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         interactionSource = interactionSource,
@@ -326,13 +322,6 @@ fun AppTextField(
                 width = if (focused) 2.dp else 1.dp,
                 color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                 shape = FieldShape,
-            )
-            .then(
-                if (wrapText) {
-                    Modifier
-                } else {
-                    Modifier.horizontalScroll(rememberScrollState())
-                }
             ),
         decorationBox = { innerTextField ->
             Box(
