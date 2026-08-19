@@ -57,7 +57,7 @@ import com.uliteamr.rustupmanager.icons.Server
 import com.uliteamr.rustupmanager.icons.Terminal
 import com.uliteamr.rustupmanager.icons.Warning
 import com.uliteamr.rustupmanager.rustup.DownloadSample
-import com.uliteamr.rustupmanager.rustup.LspChannel
+import com.uliteamr.rustupmanager.rustup.GithubRelease
 import com.uliteamr.rustupmanager.rustup.LspSource
 import com.uliteamr.rustupmanager.rustup.LspState
 import com.uliteamr.rustupmanager.rustup.OpProgress
@@ -102,7 +102,6 @@ fun DashboardScreen(
     rustup: RustupController,
     lspManager: LspManager,
     onOpenLsp: () -> Unit,
-    onOpenVersions: () -> Unit,
     onOpenTerminal: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -165,7 +164,6 @@ fun DashboardScreen(
                     scope = scope,
                     logger = logger,
                     onOpenLsp = onOpenLsp,
-                    onOpenVersions = onOpenVersions,
                 )
             }
         }
@@ -321,7 +319,6 @@ private fun ReadyBody(
     scope: CoroutineScope,
     logger: Logger,
     onOpenLsp: () -> Unit,
-    onOpenVersions: () -> Unit,
 ) {
     var toolchains by remember { mutableStateOf(state.toolchains) }
     var components by remember { mutableStateOf(state.components) }
@@ -339,12 +336,10 @@ private fun ReadyBody(
         item { SectionLabel("Language server") }
         item {
             LspSourceCard(
-                rustup = rustup,
                 lspManager = lspManager,
                 selected = lspSource,
                 onSelect = { lspSource = it },
                 onOpenLsp = onOpenLsp,
-                onOpenVersions = onOpenVersions,
             )
         }
 
@@ -441,29 +436,14 @@ private fun ReadyBody(
 
 @Composable
 private fun LspSourceCard(
-    rustup: RustupController,
     lspManager: LspManager,
     selected: LspSource,
     onSelect: (LspSource) -> Unit,
     onOpenLsp: () -> Unit,
-    onOpenVersions: () -> Unit,
 ) {
-    var channel by remember { mutableStateOf(LspChannel.Stable) }
-    var latestTag by remember { mutableStateOf<String?>(null) }
-    var latestError by remember { mutableStateOf(false) }
-    var fetchTick by remember { mutableStateOf(0) }
-
-    suspend fun refreshLatest() {
-        latestError = false
-        latestTag = null
-        val tag = rustup.githubLatestTag(channel)
-        if (tag == null) latestError = true else latestTag = tag
-    }
-
-    LaunchedEffect(selected, channel, fetchTick) {
+    LaunchedEffect(selected) {
         when (selected) {
             LspSource.Rustup -> Unit
-            LspSource.Latest -> refreshLatest()
             LspSource.Versions -> lspManager.fetchReleases()
         }
     }
@@ -476,25 +456,13 @@ private fun LspSourceCard(
         content = {
             Column {
                 SegmentedChoice(
-                    options = listOf("rustup", "latest", "versions"),
+                    options = listOf("rustup", "versions"),
                     selected = selected.name.lowercase(),
                     onSelect = { onSelect(LspSource.valueOf(it.replaceFirstChar { c -> c.uppercase() })) },
                 )
                 when (selected) {
                     LspSource.Rustup -> RustupLspTab(lspManager = lspManager)
-                    LspSource.Latest -> LatestLspTab(
-                        lspManager = lspManager,
-                        channel = channel,
-                        onChannelChange = { channel = it },
-                        latestTag = latestTag,
-                        fetching = latestTag == null && !latestError,
-                        fetchError = latestError,
-                        onRefresh = { fetchTick++ },
-                    )
-                    LspSource.Versions -> VersionsLspTab(
-                        lspManager = lspManager,
-                        onOpenVersions = onOpenVersions,
-                    )
+                    LspSource.Versions -> VersionsLspTab(lspManager = lspManager)
                 }
             }
         },
@@ -567,125 +535,7 @@ private fun RustupLspTab(lspManager: LspManager) {
 }
 
 @Composable
-private fun LatestLspTab(
-    lspManager: LspManager,
-    channel: LspChannel,
-    onChannelChange: (LspChannel) -> Unit,
-    latestTag: String?,
-    fetching: Boolean,
-    fetchError: Boolean,
-    onRefresh: () -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SegmentedChoice(
-                options = listOf("Stable", "Nightly"),
-                selected = channel.name,
-                onSelect = { onChannelChange(if (it == "Nightly") LspChannel.Nightly else LspChannel.Stable) },
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onRefresh) { Icon(Refresh, contentDescription = "Refresh") }
-        }
-
-        val tag = latestTag
-        val managed = tag?.let { t -> lspManager.lsp.versions.firstOrNull { it.tag == t } }
-        when {
-            fetching -> Row(
-                modifier = Modifier.padding(top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                InlineSpinner(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("Checking GitHub...")
-            }
-            fetchError || tag == null -> Row(
-                modifier = Modifier.padding(top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    "Couldn't reach GitHub — check your connection.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onRefresh) { Text("Retry") }
-            }
-            else -> {
-                val label = if (channel == LspChannel.Stable) "Latest stable" else "Nightly (rolling)"
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "$label: $tag",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (managed?.isActive == true) {
-                        Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("In use", color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                Row(
-                    modifier = Modifier.padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    when {
-                        managed?.isActive == true -> OutlinedButton(
-                            onClick = { scope.launch { lspManager.remove(tag) { } } },
-                            enabled = !lspManager.isBusy(tag),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        ) {
-                            Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Remove")
-                        }
-                        managed != null -> {
-                            FilledTonalButton(onClick = { scope.launch { lspManager.use(tag) { } } }, enabled = !lspManager.isBusy(tag)) {
-                                Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Use")
-                            }
-                            OutlinedButton(
-                                onClick = { scope.launch { lspManager.remove(tag) { } } },
-                                enabled = !lspManager.isBusy(tag),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            ) {
-                                Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Remove")
-                            }
-                        }
-                        else -> Button(onClick = { scope.launch { lspManager.install(tag) { } } }, enabled = !lspManager.isBusy(tag)) {
-                            Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (channel == LspChannel.Stable) "Install latest stable" else "Install nightly")
-                        }
-                    }
-                }
-                if (lspManager.isBusy(tag)) {
-                    OpProgressBar(
-                        progress = lspManager.installProgress(tag),
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VersionsLspTab(
-    lspManager: LspManager,
-    onOpenVersions: () -> Unit,
-) {
+private fun VersionsLspTab(lspManager: LspManager) {
     val scope = rememberCoroutineScope()
     val releases = lspManager.releases
     Column {
@@ -694,7 +544,7 @@ private fun VersionsLspTab(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Pick a version from rust-analyzer's releases",
+                "Pick a version from rust-analyzer's releases — latest stable and nightly are pinned on top",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
@@ -723,16 +573,20 @@ private fun VersionsLspTab(
                 modifier = Modifier.padding(vertical = 8.dp),
             )
             else -> {
-                releases.take(10).forEach { release ->
-                    ReleaseVersionRow(lspManager = lspManager, release = release)
+                val stable = releases.firstOrNull { !it.isNightly }
+                val nightly = releases.firstOrNull { it.isNightly }
+                if (stable != null) {
+                    ReleaseVersionRow(
+                        lspManager = lspManager,
+                        release = stable,
+                        title = "Latest stable · ${stable.tag}",
+                    )
                 }
-                if (releases.size > 10) {
-                    TextButton(
-                        onClick = onOpenVersions,
-                        modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
-                    ) {
-                        Text("Show all (${releases.size})")
-                    }
+                if (nightly != null) {
+                    ReleaseVersionRow(lspManager = lspManager, release = nightly)
+                }
+                releases.filter { it != stable && it != nightly }.forEach { release ->
+                    ReleaseVersionRow(lspManager = lspManager, release = release)
                 }
             }
         }
@@ -994,4 +848,90 @@ private fun AddTargetRow(
             }
         },
     )
+}
+
+/** A single release row: state line (In use / Installed / Not installed), a live progress bar
+ *  while installing, and Install/Use/Remove actions. [title] overrides the default label
+ *  (used to pin "Latest stable" on top of the versions list). */
+@Composable
+fun ReleaseVersionRow(
+    lspManager: LspManager,
+    release: GithubRelease,
+    title: String? = null,
+) {
+    val scope = rememberCoroutineScope()
+    val logger: Logger = rememberLogger()
+    val managed = lspManager.lsp.versions.firstOrNull { it.tag == release.tag }
+    val busy = lspManager.isBusy(release.tag)
+    val progress = lspManager.installProgress(release.tag)
+
+    val displayTitle = title ?: if (release.isNightly) "nightly (rolling)" else release.tag
+    val description = when {
+        managed?.isActive == true -> "In use"
+        managed != null -> "Installed"
+        else -> "Not installed"
+    }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(displayTitle, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (managed?.isActive == true) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            when {
+                managed?.isActive == true -> OutlinedButton(
+                    onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.remove(tag, onLine) } } },
+                    enabled = !busy,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Remove") }
+                managed != null -> {
+                    FilledTonalButton(
+                        onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.use(tag, onLine) } } },
+                        enabled = !busy,
+                    ) { Text("Use") }
+                    OutlinedButton(
+                        onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.remove(tag, onLine) } } },
+                        enabled = !busy,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text("Remove") }
+                }
+                else -> Button(
+                    onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.install(tag, onLine) } } },
+                    enabled = !busy,
+                ) {
+                    Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Install")
+                }
+            }
+        }
+        if (busy) {
+            OpProgressBar(
+                progress = progress,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            )
+        }
+    }
+}
+
+private suspend fun runManaged(
+    lspManager: LspManager,
+    logger: Logger,
+    tag: String,
+    action: suspend (tag: String, onLine: (String) -> Unit) -> Boolean,
+) {
+    val ok = action(tag) { logger.info(LOG_TAG, it) }
+    if (!ok) logger.info(LOG_TAG, "operation failed (see log above)")
 }

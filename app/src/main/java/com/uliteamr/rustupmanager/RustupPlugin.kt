@@ -37,7 +37,6 @@ import com.uliteamr.rustupmanager.ui.DashboardScreen
 import com.uliteamr.rustupmanager.ui.FeatureParamsScreen
 import com.uliteamr.rustupmanager.ui.LspManager
 import com.uliteamr.rustupmanager.ui.LspScreen
-import com.uliteamr.rustupmanager.ui.LspVersionsScreen
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -47,7 +46,6 @@ import kotlinx.coroutines.launch
 
 private val DASHBOARD_SCREEN = ScreenId("com.uliteamr.rustupmanager.dashboard")
 private val LSP_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp")
-private val LSP_VERSIONS_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp.versions")
 private val FEATURE_PARAMS_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp.featureParams")
 private const val TOOLBAR_ACTION_ID = "com.uliteamr.rustupmanager.open"
 private const val LSP_PATTERN = "rs"
@@ -91,7 +89,6 @@ class RustupPlugin : KlyxPlugin {
                 rustup = rustup,
                 lspManager = lspManager,
                 onOpenLsp = { navigator.navigateTo(NavDestination.Custom(LSP_SCREEN)) },
-                onOpenVersions = { navigator.navigateTo(NavDestination.Custom(LSP_VERSIONS_SCREEN)) },
                 onOpenTerminal = { terminalManager.openTerminal() },
                 onBack = { navigator.navigateBack() },
             )
@@ -107,10 +104,6 @@ class RustupPlugin : KlyxPlugin {
 
         screens[FEATURE_PARAMS_SCREEN] = {
             FeatureParamsScreen(settings = settings, onBack = { navigator.navigateBack() })
-        }
-
-        screens[LSP_VERSIONS_SCREEN] = {
-            LspVersionsScreen(lspManager = lspManager, onBack = { navigator.navigateBack() })
         }
 
         lspRegistration = languageServers.register(LSP_PATTERN, RustAnalyzerProvider(pluginScope, settings))
@@ -144,7 +137,7 @@ class RustupPlugin : KlyxPlugin {
         fileOpenedSubscription = null
         screens.unregister(DASHBOARD_SCREEN)
         screens.unregister(LSP_SCREEN)
-        screens.unregister(LSP_VERSIONS_SCREEN)
+        screens.unregister(FEATURE_PARAMS_SCREEN)
         toolbar.unregister(TOOLBAR_ACTION_ID)
         toolbarActionRegistered = false
         lspRegistration?.unregister()

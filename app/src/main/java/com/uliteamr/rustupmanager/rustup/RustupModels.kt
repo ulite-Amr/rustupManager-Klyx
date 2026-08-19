@@ -12,9 +12,7 @@ data class ComponentState(
     val rustSrc: Boolean,
 )
 
-enum class LspSource { Rustup, Latest, Versions }
-
-enum class LspChannel { Stable, Nightly }
+enum class LspSource { Rustup, Versions }
 
 data class ManagedLspVersion(
     val tag: String,

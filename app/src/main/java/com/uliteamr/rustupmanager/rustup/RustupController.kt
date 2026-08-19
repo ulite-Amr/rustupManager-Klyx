@@ -177,21 +177,6 @@ class RustupController {
 
     // --- rust-analyzer from GitHub releases ---
 
-    /** Latest stable tag (e.g. "2026-08-10") or the rolling "nightly" tag. */
-    suspend fun githubLatestTag(channel: LspChannel): String? {
-        val url = if (channel == LspChannel.Stable) {
-            "$RA_API_BASE/releases/latest"
-        } else {
-            "$RA_API_BASE/releases/tags/nightly"
-        }
-        val result = command(BASH, "-lc", "curl -fsSL --max-time 20 '$url'").output()
-        if (result.exitCode != 0) return null
-        for (line in result.stdoutLines) {
-            TAG_NAME_RE.find(line)?.let { return it.groupValues[1] }
-        }
-        return null
-    }
-
     /** Release tags (newest first) with their nightly flag, fetched from the GitHub API. */
     suspend fun githubReleases(limit: Int = 50): List<GithubRelease> {
         val result = command(BASH, "-lc", "curl -fsSL --max-time 20 '$RA_API_BASE/releases?per_page=$limit'").output()
@@ -209,7 +194,7 @@ class RustupController {
         return releases
     }
 
-    /** Installs a specific release tag (from [githubReleases] or [githubLatestTag]) and activates it. */
+    /** Installs a specific release tag (from [githubReleases]) and activates it. */
     suspend fun installLspViaGithub(tag: String, onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean {
         val arch = githubArch()
         if (arch == null) {

@@ -10,8 +10,8 @@ import com.uliteamr.rustupmanager.rustup.OpProgress
 import com.uliteamr.rustupmanager.rustup.RustupController
 
 /**
- * Shared rust-analyzer install state so the dashboard's "versions" tab and the full versions
- * screen stay in sync. Mutating [lsp] or [releases] recomposes only the LSP cards that read them.
+ * Shared rust-analyzer install state so the dashboard's "versions" tab and the LSP
+ * cards stay in sync. Mutating [lsp] or [releases] recomposes only the cards that read them.
  */
 class LspManager(private val rustup: RustupController) {
 
