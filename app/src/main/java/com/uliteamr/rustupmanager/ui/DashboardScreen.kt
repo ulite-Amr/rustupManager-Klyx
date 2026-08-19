@@ -103,6 +103,7 @@ fun DashboardScreen(
     rustup: RustupController,
     lspManager: LspManager,
     onOpenLsp: () -> Unit,
+    onOpenVersions: () -> Unit,
     onOpenTerminal: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -165,6 +166,7 @@ fun DashboardScreen(
                     scope = scope,
                     logger = logger,
                     onOpenLsp = onOpenLsp,
+                    onOpenVersions = onOpenVersions,
                 )
             }
         }
@@ -320,6 +322,7 @@ private fun ReadyBody(
     scope: CoroutineScope,
     logger: Logger,
     onOpenLsp: () -> Unit,
+    onOpenVersions: () -> Unit,
 ) {
     var toolchains by remember { mutableStateOf(state.toolchains) }
     var components by remember { mutableStateOf(state.components) }
@@ -348,6 +351,7 @@ private fun ReadyBody(
                 selected = lspSource,
                 onSelect = { lspSource = it },
                 onOpenLsp = onOpenLsp,
+                onShowAll = onOpenVersions,
             )
         }
 
@@ -448,6 +452,7 @@ private fun LspSourceCard(
     selected: LspSource,
     onSelect: (LspSource) -> Unit,
     onOpenLsp: () -> Unit,
+    onShowAll: () -> Unit,
 ) {
     SettingsCard(
         icon = Server,
@@ -463,7 +468,7 @@ private fun LspSourceCard(
                 )
                 when (selected) {
                     LspSource.Rustup -> RustupLspTab(lspManager = lspManager)
-                    LspSource.Versions -> VersionsLspTab(lspManager = lspManager)
+                    LspSource.Versions -> VersionsLspTab(lspManager = lspManager, onShowAll = onShowAll)
                 }
             }
         },
@@ -536,7 +541,7 @@ private fun RustupLspTab(lspManager: LspManager) {
 }
 
 @Composable
-private fun VersionsLspTab(lspManager: LspManager) {
+private fun VersionsLspTab(lspManager: LspManager, onShowAll: () -> Unit) {
     val scope = rememberCoroutineScope()
     val releases = lspManager.releases
     Column {
@@ -576,18 +581,38 @@ private fun VersionsLspTab(lspManager: LspManager) {
             else -> {
                 val stable = releases.firstOrNull { !it.isNightly }
                 val nightly = releases.firstOrNull { it.isNightly }
-                if (stable != null) {
-                    ReleaseVersionRow(
-                        lspManager = lspManager,
-                        release = stable,
-                        title = "Latest stable · ${stable.tag}",
-                    )
+                val others = releases.filter { it != stable && it != nightly }
+
+                SettingsCard(
+                    title = "Latest & nightly",
+                    description = "Pinned releases: the newest stable and the rolling nightly build",
+                ) {
+                    Column {
+                        if (stable != null) {
+                            ReleaseVersionRow(
+                                lspManager = lspManager,
+                                release = stable,
+                                title = "Latest stable · ${stable.tag}",
+                            )
+                        }
+                        if (nightly != null) {
+                            ReleaseVersionRow(lspManager = lspManager, release = nightly)
+                        }
+                    }
                 }
-                if (nightly != null) {
-                    ReleaseVersionRow(lspManager = lspManager, release = nightly)
-                }
-                releases.filter { it != stable && it != nightly }.forEach { release ->
+
+                others.take(8).forEach { release ->
                     ReleaseVersionRow(lspManager = lspManager, release = release)
+                }
+                if (others.size > 8) {
+                    OutlinedButton(
+                        onClick = onShowAll,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text("Show all ${others.size} releases")
+                    }
                 }
             }
         }
