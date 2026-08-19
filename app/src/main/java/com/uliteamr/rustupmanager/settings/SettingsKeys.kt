@@ -33,6 +33,10 @@ object SettingsKeys {
     /** initializationOptions: raw JSON object overriding every other option; blank when unused. */
     const val rawInitOptions = "initOptions.raw"
 
+    /** Persisted GitHub release list (JSON array of {tag, nightly}) so the versions list
+     *  renders instantly from cache while a background check looks for newer releases. */
+    const val releasesCache = "lsp.releasesCache"
+
     const val autoCheckUpdates = "autoCheckUpdates"
     const val checkIntervalDays = "checkIntervalDays"
     const val defaultChannel = "defaultChannel"

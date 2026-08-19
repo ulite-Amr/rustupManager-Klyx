@@ -34,7 +34,7 @@ fun LspVersionsScreen(lspManager: LspManager, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        if (lspManager.releases == null) lspManager.fetchReleases()
+        lspManager.ensureReleases()
     }
 
     Column(modifier = Modifier.fillMaxSize()) {

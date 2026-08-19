@@ -78,7 +78,10 @@ class RustupPlugin : KlyxPlugin {
     private val settings: PluginSettings by runtime()
 
     private val rustup = RustupController()
-    private val lspManager = LspManager(rustup)
+    // The settings delegate must not be touched here: the host forbids accessing runtime
+    // services in plugin constructors. LspManager receives a provider and resolves the
+    // service lazily on first use (inside onLoad or later).
+    private val lspManager = LspManager(rustup) { settings }
     private var lspRegistration: LanguageServerRegistration? = null
     private var settingsRegistration: PluginSettingsRegistration? = null
     private var fileOpenedSubscription: EventSubscription? = null

@@ -340,7 +340,7 @@ private fun ReadyBody(
     // disposed when scrolled off-screen, so an effect inside it would re-fetch (and blank the
     // list) every time the user scrolls back up.
     LaunchedEffect(lspSource) {
-        if (lspSource == LspSource.Versions) lspManager.fetchReleases()
+        if (lspSource == LspSource.Versions) lspManager.ensureReleases()
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
