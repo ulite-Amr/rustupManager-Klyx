@@ -14,8 +14,11 @@ import com.uliteamr.rustupmanager.settings.SettingsKeys
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Spawns rust-analyzer by its bare command name rather than an absolute path. Klyx resolves a
@@ -48,43 +51,68 @@ class RustAnalyzerProvider(
      */
     override fun initializationOptions(): LSPAny {
         val currentTargetOnly = settings.getBoolean(SettingsKeys.currentTargetOnly, true)
-        return JsonObject(
-            buildMap {
-                put("check", JsonObject(mapOf("allTargets" to JsonPrimitive(!currentTargetOnly))))
-                if (settings.getBoolean(SettingsKeys.macroDiagnostics, true)) {
-                    put(
-                        "diagnostics",
-                        JsonObject(
-                            mapOf(
-                                "enable" to JsonPrimitive(true),
-                                "experimental" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
-                            )
+        val options = buildMap {
+            put("check", JsonObject(mapOf("allTargets" to JsonPrimitive(!currentTargetOnly))))
+            if (settings.getBoolean(SettingsKeys.macroDiagnostics, true)) {
+                put(
+                    "diagnostics",
+                    JsonObject(
+                        mapOf(
+                            "enable" to JsonPrimitive(true),
+                            "experimental" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
                         )
                     )
-                }
-                if (settings.getBoolean(SettingsKeys.checkOnSave, true)) {
-                    put(
-                        "checkOnSave",
-                        JsonObject(
-                            mapOf(
-                                "enable" to JsonPrimitive(true),
-                                "allTargets" to JsonPrimitive(!currentTargetOnly)
-                            )
+                )
+            }
+            if (settings.getBoolean(SettingsKeys.checkOnSave, true)) {
+                put(
+                    "checkOnSave",
+                    JsonObject(
+                        mapOf(
+                            "enable" to JsonPrimitive(true),
+                            "allTargets" to JsonPrimitive(!currentTargetOnly)
                         )
                     )
-                }
-                if (settings.getBoolean(SettingsKeys.bindingModeHints, true)) {
-                    put(
-                        "inlayHints",
-                        JsonObject(
-                            mapOf(
-                                "bindingModeHints" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
-                            )
+                )
+            }
+            if (settings.getBoolean(SettingsKeys.bindingModeHints, true)) {
+                put(
+                    "inlayHints",
+                    JsonObject(
+                        mapOf(
+                            "bindingModeHints" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
                         )
                     )
+                )
+            }
+
+            // Custom features from "Feature Parameters and Initialize" override the toggles
+            // on name collision. Stored as a JSON array of {name, type, value}.
+            val custom = settings.getString(SettingsKeys.customInitOptions, "") ?: ""
+            if (custom.isNotBlank()) {
+                runCatching {
+                    val entries = (Json.parseToJsonElement(custom) as? JsonArray) ?: return@runCatching
+                    for (entry in entries) {
+                        val obj = entry as? JsonObject ?: continue
+                        val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: continue
+                        if (name.isBlank()) continue
+                        val type = (obj["type"] as? JsonPrimitive)?.contentOrNull ?: "boolean"
+                        val value = (obj["value"] as? JsonPrimitive)?.contentOrNull ?: ""
+                        put(name, if (type != "boolean") JsonPrimitive(value) else JsonPrimitive(value != "false"))
+                    }
                 }
             }
-        )
+        }
+
+        // Raw JSON wins over everything: when present and a valid object, use it verbatim.
+        val raw = settings.getString(SettingsKeys.rawInitOptions, "") ?: ""
+        if (raw.isNotBlank()) {
+            runCatching {
+                val parsed = Json.parseToJsonElement(raw)
+                if (parsed is JsonObject) return parsed
+            }
+        }
+        return JsonObject(options)
     }
 
     override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {

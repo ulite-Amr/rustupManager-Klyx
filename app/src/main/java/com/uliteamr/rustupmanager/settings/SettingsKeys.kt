@@ -27,6 +27,12 @@ object SettingsKeys {
     /** initializationOptions: only check the current target instead of all targets. */
     const val currentTargetOnly = "initOptions.currentTargetOnly"
 
+    /** initializationOptions: user-defined extra features, JSON array of {name, type, value}. */
+    const val customInitOptions = "initOptions.custom"
+
+    /** initializationOptions: raw JSON object overriding every other option; blank when unused. */
+    const val rawInitOptions = "initOptions.raw"
+
     const val autoCheckUpdates = "autoCheckUpdates"
     const val checkIntervalDays = "checkIntervalDays"
     const val defaultChannel = "defaultChannel"

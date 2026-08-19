@@ -68,6 +68,13 @@ fun LspScreen(
                 },
             )
 
+            SettingsCard(
+                icon = Wrench,
+                title = "Feature Parameters and Initialize",
+                description = "Parameters sent to rust-analyzer on the initialize request — every feature on by default, toggleable",
+                trailing = { TextButton(onClick = onOpenFeatureParams) { Text("Configure") } },
+            )
+
             OutlinedButton(
                 onClick = { RustAnalyzerSession.stop() },
                 enabled = status is LspStatus.Running,
@@ -133,12 +140,6 @@ fun LspScreen(
                 description = "Inline type hints in the editor · managed by Klyx (editor setting)",
                 checked = true,
                 enabled = false,
-            )
-            SettingsCard(
-                icon = Wrench,
-                title = "Feature Parameters and Initialize",
-                description = "Parameters sent to rust-analyzer on the initialize request — every feature on by default, toggleable",
-                trailing = { TextButton(onClick = onOpenFeatureParams) { Text("Configure") } },
             )
 
             SectionLabel("Not available yet")
