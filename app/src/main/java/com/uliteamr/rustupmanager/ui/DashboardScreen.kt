@@ -41,7 +41,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -52,13 +51,17 @@ import com.klyx.api.service.error
 import com.klyx.api.service.info
 import com.klyx.api.service.rememberLogger
 import com.klyx.api.service.warn
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.uliteamr.rustupmanager.icons.Add
 import com.uliteamr.rustupmanager.icons.Check
 import com.uliteamr.rustupmanager.icons.Delete
 import com.uliteamr.rustupmanager.icons.Download
 import com.uliteamr.rustupmanager.icons.Info
+import com.uliteamr.rustupmanager.icons.Moon
 import com.uliteamr.rustupmanager.icons.Refresh
 import com.uliteamr.rustupmanager.icons.Server
+import com.uliteamr.rustupmanager.icons.Star
 import com.uliteamr.rustupmanager.icons.Terminal
 import com.uliteamr.rustupmanager.icons.Warning
 import com.uliteamr.rustupmanager.rustup.DownloadSample
@@ -586,54 +589,42 @@ private fun VersionsLspTab(lspManager: LspManager, onShowAll: () -> Unit) {
                 val stable = releases.firstOrNull { !it.isNightly }
                 val nightly = releases.firstOrNull { it.isNightly }
                 val others = releases.filter { it != stable && it != nightly }
+                // Resolved once per lsp-state change and looked up by tag below, instead of every
+                // row scanning the full versions list on every recomposition.
+                val versionsByTag = remember(lspManager.lsp.versions) {
+                    lspManager.lsp.versions.associateBy { it.tag }
+                }
 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                ) {
-                    Column(modifier = Modifier.padding(vertical = 10.dp)) {
-                        Text(
-                            "Latest & nightly",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                        Text(
-                            "The newest stable and the rolling nightly build",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 4.dp),
-                        )
-                        if (stable != null) {
-                            ReleaseVersionRow(
-                                lspManager = lspManager,
-                                release = stable,
-                                title = "Latest stable",
-                                subtitle = stable.tag,
-                                horizontalPadding = 0.dp,
-                                descriptionColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-                                activeColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                        }
-                        if (nightly != null) {
-                            ReleaseVersionRow(
-                                lspManager = lspManager,
-                                release = nightly,
-                                title = "nightly (rolling)",
-                                subtitle = nightly.tag,
-                                horizontalPadding = 0.dp,
-                                descriptionColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-                                activeColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                        }
-                    }
+                if (stable != null) {
+                    ReleaseVersionRow(
+                        lspManager = lspManager,
+                        release = stable,
+                        managed = versionsByTag[stable.tag],
+                        title = "Latest stable",
+                        subtitle = stable.tag,
+                        icon = Star,
+                    )
+                }
+                if (nightly != null) {
+                    ReleaseVersionRow(
+                        lspManager = lspManager,
+                        release = nightly,
+                        managed = versionsByTag[nightly.tag],
+                        title = "nightly (rolling)",
+                        subtitle = nightly.tag,
+                        icon = Moon,
+                    )
+                }
+                if (stable != null || nightly != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                 }
 
                 others.take(8).forEach { release ->
-                    ReleaseVersionRow(lspManager = lspManager, release = release)
+                    ReleaseVersionRow(
+                        lspManager = lspManager,
+                        release = release,
+                        managed = versionsByTag[release.tag],
+                    )
                 }
                 if (others.size > 8) {
                     OutlinedButton(
@@ -909,20 +900,22 @@ private fun AddTargetRow(
 
 /** A single release row: state line (In use / Installed / Not installed), a live progress bar
  *  while installing, and Install/Use/Remove actions. [title] overrides the default label
- *  (used to pin "Latest stable" on top of the versions list). */
+ *  (used to pin "Latest stable" and "nightly" on top of the versions list). [managed] is
+ *  resolved once by the caller (a tag -> Toolchain map built from [LspManager.lsp]) instead of
+ *  every row scanning the full versions list on every recomposition. [icon] marks the pinned
+ *  latest-stable (star) and nightly (moon) rows; plain releases pass null. */
 @Composable
 fun ReleaseVersionRow(
     lspManager: LspManager,
     release: GithubRelease,
+    managed: Toolchain?,
     title: String? = null,
     subtitle: String? = null,
+    icon: ImageVector? = null,
     horizontalPadding: Dp = 16.dp,
-    descriptionColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    activeColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val scope = rememberCoroutineScope()
     val logger: Logger = rememberLogger()
-    val managed = lspManager.lsp.versions.firstOrNull { it.tag == release.tag }
     val busy = lspManager.isBusy(release.tag)
     val progress = lspManager.installProgress(release.tag)
 
@@ -945,12 +938,24 @@ fun ReleaseVersionRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(displayTitle, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (managed?.isActive == true) activeColor else descriptionColor,
+                    color = if (managed?.isActive == true) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
             when {

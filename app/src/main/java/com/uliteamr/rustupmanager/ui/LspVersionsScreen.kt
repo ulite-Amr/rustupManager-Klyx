@@ -17,11 +17,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.uliteamr.rustupmanager.icons.Moon
 import com.uliteamr.rustupmanager.icons.Refresh
+import com.uliteamr.rustupmanager.icons.Star
 import kotlinx.coroutines.launch
 
 /**
@@ -56,28 +59,48 @@ fun LspVersionsScreen(lspManager: LspManager, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(20.dp),
             )
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "${releases.size} releases",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        IconButton(onClick = { scope.launch { lspManager.fetchReleases() } }) {
-                            Icon(Refresh, contentDescription = "Refresh")
+            else -> {
+                // Resolved once per lsp-state change and looked up by tag below, instead of
+                // every visible row scanning the full versions list on every recomposition —
+                // this is what was causing the scroll lag on longer release lists.
+                val versionsByTag = remember(lspManager.lsp.versions) {
+                    lspManager.lsp.versions.associateBy { it.tag }
+                }
+                val stableTag = releases.firstOrNull { !it.isNightly }?.tag
+                val nightlyTag = releases.firstOrNull { it.isNightly }?.tag
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${releases.size} releases",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = { scope.launch { lspManager.fetchReleases() } }) {
+                                Icon(Refresh, contentDescription = "Refresh")
+                            }
                         }
                     }
-                }
-                items(releases, key = { it.tag }) { release ->
-                    ReleaseVersionRow(lspManager = lspManager, release = release)
+                    items(releases, key = { it.tag }) { release ->
+                        ReleaseVersionRow(
+                            lspManager = lspManager,
+                            release = release,
+                            managed = versionsByTag[release.tag],
+                            icon = when (release.tag) {
+                                stableTag -> Star
+                                nightlyTag -> Moon
+                                else -> null
+                            },
+                        )
+                    }
                 }
             }
         }
