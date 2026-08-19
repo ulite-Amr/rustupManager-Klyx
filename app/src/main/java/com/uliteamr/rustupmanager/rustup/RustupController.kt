@@ -25,6 +25,15 @@ private val PRERELEASE_RE = Regex(""""prerelease"\s*:\s*(true|false)""")
 
 // " 89.5 MiB / 89.5 MiB (100.0 %)  54.6 KiB/s" (rustup) or curl's " 45.2 MiB 12.3 %" progress.
 private val PERCENT_RE = Regex("""(\d{1,3}(?:\.\d+)?)\s*%""")
+private val SIZE_RE = Regex("""(\d+(?:\.\d+)?)\s*(KiB|MiB|GiB)""")
+private val SIZE_TOTAL_RE = Regex("""(\d+(?:\.\d+)?)\s*(KiB|MiB|GiB)\s*/\s*(\d+(?:\.\d+)?)\s*(KiB|MiB|GiB)""")
+
+private fun parseBytes(value: String, unit: String): Long = when (unit) {
+    "KiB" -> (value.toDouble() * 1024).toLong()
+    "MiB" -> (value.toDouble() * 1024 * 1024).toLong()
+    "GiB" -> (value.toDouble() * 1024 * 1024 * 1024).toLong()
+    else -> 0L
+}
 
 class RustupController {
 
@@ -41,13 +50,15 @@ class RustupController {
         false
     }
 
-    suspend fun bootstrapInstall(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean {
-        val script = "curl --proto '=https' --tlsv1.2 -sSf $RUSTUP_INIT_URL | " +
+    suspend fun bootstrapInstall(onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean {
+        // --progress-bar keeps curl's live progress (percent + size) on stderr even while its
+        // stdout is piped into the installer, so the setup page shows real download progress.
+        val script = "curl -L --progress-bar --proto '=https' --tlsv1.2 -sSf $RUSTUP_INIT_URL | " +
             "sh -s -- -y --default-toolchain stable --profile default"
         return runStreaming(BASH, arrayOf("-lc", script), onLine, onProgress)
     }
 
-    suspend fun resetInstall(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    suspend fun resetInstall(onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runStreaming(BASH, arrayOf("-lc", "rm -rf /root/.rustup /root/.cargo"), onLine, onProgress)
 
     suspend fun listToolchains(): List<Toolchain> {
@@ -83,7 +94,7 @@ class RustupController {
         return updates
     }
 
-    suspend fun installToolchain(name: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    suspend fun installToolchain(name: String, onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runRustup("toolchain", "install", name, onLine = onLine, onProgress = onProgress)
 
     suspend fun uninstallToolchain(name: String, onLine: (String) -> Unit): Boolean =
@@ -92,7 +103,7 @@ class RustupController {
     suspend fun setDefaultToolchain(name: String, onLine: (String) -> Unit): Boolean =
         runRustup("default", name, onLine = onLine)
 
-    suspend fun updateToolchain(name: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    suspend fun updateToolchain(name: String, onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runRustup("update", name, onLine = onLine, onProgress = onProgress)
 
     suspend fun componentState(): ComponentState {
@@ -106,7 +117,7 @@ class RustupController {
         )
     }
 
-    suspend fun addComponent(component: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    suspend fun addComponent(component: String, onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runRustup("component", "add", component, onLine = onLine, onProgress = onProgress)
 
     suspend fun removeComponent(component: String, onLine: (String) -> Unit): Boolean =
@@ -118,13 +129,13 @@ class RustupController {
         return result.stdoutLines.filter { it.isNotBlank() }
     }
 
-    suspend fun addTarget(target: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    suspend fun addTarget(target: String, onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runRustup("target", "add", target, onLine = onLine, onProgress = onProgress)
 
     suspend fun removeTarget(target: String, onLine: (String) -> Unit): Boolean =
         runRustup("target", "remove", target, onLine = onLine)
 
-    suspend fun updateAll(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    suspend fun updateAll(onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runRustup("update", onLine = onLine, onProgress = onProgress)
 
     // --- rust-analyzer: source-independent by design ---
@@ -143,31 +154,28 @@ class RustupController {
         val versions = installedTags.map { tag ->
             ManagedLspVersion(tag = tag, installed = true, isActive = tag == active)
         }
-        return LspState(installedViaRustup = viaRustup, versions = versions, activeVersion = active)
+        // Exactly one source is active at a time: a managed tag when the symlink exists,
+        // otherwise the rustup component when it is installed.
+        return LspState(
+            installedViaRustup = viaRustup,
+            versions = versions,
+            activeVersion = active,
+            rustupActive = active == null && viaRustup,
+        )
     }
 
-    suspend fun installLspViaRustup(onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    /** Makes the rustup component the active source by dropping the managed symlink, so the
+     *  bare-name resolution falls back to the toolchain's rust-analyzer. */
+    suspend fun useViaRustup(onLine: (String) -> Unit): Boolean =
+        runStreaming(BASH, arrayOf("-lc", "rm -f $RA_BIN_LINK"), onLine)
+
+    suspend fun installLspViaRustup(onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runRustup("component", "add", "rust-analyzer", onLine = onLine, onProgress = onProgress)
 
     suspend fun removeLspViaRustup(onLine: (String) -> Unit): Boolean =
         runRustup("component", "remove", "rust-analyzer", onLine = onLine)
 
     // --- rust-analyzer from GitHub releases ---
-
-    /** Latest stable tag (e.g. "2026-08-10") or the rolling "nightly" tag. */
-    suspend fun githubLatestTag(channel: LspChannel): String? {
-        val url = if (channel == LspChannel.Stable) {
-            "$RA_API_BASE/releases/latest"
-        } else {
-            "$RA_API_BASE/releases/tags/nightly"
-        }
-        val result = command(BASH, "-lc", "curl -fsSL --max-time 20 '$url'").output()
-        if (result.exitCode != 0) return null
-        for (line in result.stdoutLines) {
-            TAG_NAME_RE.find(line)?.let { return it.groupValues[1] }
-        }
-        return null
-    }
 
     /** Release tags (newest first) with their nightly flag, fetched from the GitHub API. */
     suspend fun githubReleases(limit: Int = 50): List<GithubRelease> {
@@ -186,8 +194,8 @@ class RustupController {
         return releases
     }
 
-    /** Installs a specific release tag (from [githubReleases] or [githubLatestTag]) and activates it. */
-    suspend fun installLspViaGithub(tag: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean {
+    /** Installs a specific release tag (from [githubReleases]) and activates it. */
+    suspend fun installLspViaGithub(tag: String, onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean {
         val arch = githubArch()
         if (arch == null) {
             onLine("error: unsupported device architecture for rust-analyzer downloads")
@@ -207,9 +215,19 @@ class RustupController {
         return runStreaming(BASH, arrayOf("-lc", script), onLine, onProgress)
     }
 
-    /** Points the active `rust-analyzer` (resolved as a bare name via ~/.local/bin) at [tag]. */
-    suspend fun useManagedLsp(tag: String, onLine: (String) -> Unit): Boolean =
-        runStreaming(BASH, arrayOf("-lc", "ln -sfn ../share/rust-analyzer/$tag/rust-analyzer $RA_BIN_LINK"), onLine)
+    /** Points the active `rust-analyzer` (resolved as a bare name via ~/.local/bin) at [tag].
+     *  Also removes the rustup component if present, so exactly one source is active and the
+     *  tag can never be shadowed by the toolchain's binary on PATH. */
+    suspend fun useManagedLsp(tag: String, onLine: (String) -> Unit): Boolean {
+        val script = """
+            ln -sfn ../share/rust-analyzer/$tag/rust-analyzer $RA_BIN_LINK
+            if $RUSTUP component list --installed 2>/dev/null | grep -q '^rust-analyzer'; then
+                echo "removing rustup component rust-analyzer so $tag stays the active source"
+                $RUSTUP component remove rust-analyzer
+            fi
+        """.trimIndent()
+        return runStreaming(BASH, arrayOf("-lc", script), onLine)
+    }
 
     /** Removes a managed version; if it was active, also drops the active link. */
     suspend fun removeManagedLsp(tag: String, onLine: (String) -> Unit): Boolean {
@@ -251,14 +269,14 @@ class RustupController {
         }
     }
 
-    private suspend fun runRustup(vararg args: String, onLine: (String) -> Unit, onProgress: (Float?) -> Unit = {}): Boolean =
+    private suspend fun runRustup(vararg args: String, onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit = {}): Boolean =
         runStreaming(RUSTUP, arrayOf(*args), onLine, onProgress)
 
     private suspend fun runStreaming(
         program: String,
         args: Array<String>,
         onLine: (String) -> Unit,
-        onProgress: (Float?) -> Unit = {},
+        onProgress: (DownloadSample) -> Unit = {},
     ): Boolean {
         var success = false
         var exitCode = -1
@@ -302,17 +320,35 @@ class RustupController {
         return success
     }
 
-    /** Parses the last percentage in a chunk (rustup "(100.0 %)" or curl "12.3 %") and forwards it. */
-    private fun emitProgress(chunk: String, onProgress: (Float?) -> Unit) {
-        var fraction: Float? = null
+    /** Parses the last progress sample in a chunk (rustup "(100.0 %)" with "89.5 MiB / 89.5 MiB"
+     *  totals, or curl's "45.2 MiB 12.3 %") and forwards it. Only the final redraw of a \r-updated
+     *  line matters, so each \r segment is parsed in turn and the last non-empty sample wins. */
+    private fun emitProgress(chunk: String, onProgress: (DownloadSample) -> Unit) {
+        var sample: DownloadSample? = null
         for (segment in chunk.split('\r')) {
+            var fraction: Float? = null
+            var downloaded: Long? = null
+            var total: Long? = null
             PERCENT_RE.find(segment)?.let { m ->
                 m.groupValues[1].toFloatOrNull()?.let { value ->
                     fraction = (value / 100f).coerceIn(0f, 1f)
                 }
             }
+            SIZE_TOTAL_RE.find(segment)?.let { m ->
+                downloaded = parseBytes(m.groupValues[1], m.groupValues[2])
+                total = parseBytes(m.groupValues[3], m.groupValues[4])
+            } ?: SIZE_RE.find(segment)?.let { m ->
+                downloaded = parseBytes(m.groupValues[1], m.groupValues[2])
+            }
+            if (fraction != null || downloaded != null) {
+                sample = DownloadSample(
+                    fraction = fraction,
+                    downloadedBytes = downloaded,
+                    totalBytes = total,
+                )
+            }
         }
-        fraction?.let(onProgress)
+        sample?.let(onProgress)
     }
 
     /** Maps a failed command's stderr to a short, actionable hint (or the last stderr line). */

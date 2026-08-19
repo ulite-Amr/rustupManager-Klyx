@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,11 +37,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.klyx.api.service.Logger
@@ -47,18 +51,24 @@ import com.klyx.api.service.error
 import com.klyx.api.service.info
 import com.klyx.api.service.rememberLogger
 import com.klyx.api.service.warn
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.uliteamr.rustupmanager.icons.Add
 import com.uliteamr.rustupmanager.icons.Check
 import com.uliteamr.rustupmanager.icons.Delete
 import com.uliteamr.rustupmanager.icons.Download
 import com.uliteamr.rustupmanager.icons.Info
+import com.uliteamr.rustupmanager.icons.Moon
 import com.uliteamr.rustupmanager.icons.Refresh
 import com.uliteamr.rustupmanager.icons.Server
+import com.uliteamr.rustupmanager.icons.Star
 import com.uliteamr.rustupmanager.icons.Terminal
 import com.uliteamr.rustupmanager.icons.Warning
-import com.uliteamr.rustupmanager.rustup.LspChannel
+import com.uliteamr.rustupmanager.rustup.DownloadSample
+import com.uliteamr.rustupmanager.rustup.GithubRelease
 import com.uliteamr.rustupmanager.rustup.LspSource
 import com.uliteamr.rustupmanager.rustup.LspState
+import com.uliteamr.rustupmanager.rustup.ManagedLspVersion
 import com.uliteamr.rustupmanager.rustup.OpProgress
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.rustup.RustupState
@@ -76,7 +86,7 @@ private fun runOp(
     progress: MutableState<OpProgress?>,
     label: String,
     onDone: suspend () -> Unit,
-    action: suspend (onLine: (String) -> Unit, onProgress: (Float?) -> Unit) -> Boolean,
+    action: suspend (onLine: (String) -> Unit, onProgress: (DownloadSample) -> Unit) -> Boolean,
 ) {
     scope.launch {
         progress.value = OpProgress(label, null)
@@ -84,7 +94,7 @@ private fun runOp(
         try {
             val ok = action(
                 { line -> logger.info(LOG_TAG, line) },
-                { fraction -> progress.value = OpProgress(label, fraction) },
+                { sample -> progress.value = OpProgress(label, sample.fraction, sample.downloadedBytes, sample.totalBytes) },
             )
             if (ok) logger.info(LOG_TAG, "done") else logger.warn(LOG_TAG, "failed (see log above)")
         } catch (e: Exception) {
@@ -334,16 +344,22 @@ private fun ReadyBody(
 
     LaunchedEffect(Unit) { lspManager.refresh() }
 
+    // Fetching lives here, not inside the card: the card sits in a LazyColumn item that is
+    // disposed when scrolled off-screen, so an effect inside it would re-fetch (and blank the
+    // list) every time the user scrolls back up.
+    LaunchedEffect(lspSource) {
+        if (lspSource == LspSource.Versions) lspManager.ensureReleases()
+    }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item { SectionLabel("Language server") }
         item {
             LspSourceCard(
-                rustup = rustup,
                 lspManager = lspManager,
                 selected = lspSource,
                 onSelect = { lspSource = it },
                 onOpenLsp = onOpenLsp,
-                onOpenVersions = onOpenVersions,
+                onShowAll = onOpenVersions,
             )
         }
 
@@ -367,7 +383,7 @@ private fun ReadyBody(
                 )
             }
         }
-        item {
+        item(key = "install-toolchain") {
             InstallToolchainRow(
                 rustup = rustup,
                 scope = scope,
@@ -397,7 +413,7 @@ private fun ReadyBody(
                 )
             }
         } else {
-            items(targets) { target ->
+            items(targets, key = { it }) { target ->
                 TargetRow(
                     target = target,
                     rustup = rustup,
@@ -407,7 +423,7 @@ private fun ReadyBody(
                 )
             }
         }
-        item {
+        item(key = "add-target") {
             AddTargetRow(
                 rustup = rustup,
                 scope = scope,
@@ -440,33 +456,12 @@ private fun ReadyBody(
 
 @Composable
 private fun LspSourceCard(
-    rustup: RustupController,
     lspManager: LspManager,
     selected: LspSource,
     onSelect: (LspSource) -> Unit,
     onOpenLsp: () -> Unit,
-    onOpenVersions: () -> Unit,
+    onShowAll: () -> Unit,
 ) {
-    var channel by remember { mutableStateOf(LspChannel.Stable) }
-    var latestTag by remember { mutableStateOf<String?>(null) }
-    var latestError by remember { mutableStateOf(false) }
-    var fetchTick by remember { mutableStateOf(0) }
-
-    suspend fun refreshLatest() {
-        latestError = false
-        latestTag = null
-        val tag = rustup.githubLatestTag(channel)
-        if (tag == null) latestError = true else latestTag = tag
-    }
-
-    LaunchedEffect(selected, channel, fetchTick) {
-        when (selected) {
-            LspSource.Rustup -> Unit
-            LspSource.Latest -> refreshLatest()
-            LspSource.Versions -> lspManager.fetchReleases()
-        }
-    }
-
     SettingsCard(
         icon = Server,
         title = "Language server",
@@ -475,25 +470,13 @@ private fun LspSourceCard(
         content = {
             Column {
                 SegmentedChoice(
-                    options = listOf("rustup", "latest", "versions"),
+                    options = listOf("rustup", "versions"),
                     selected = selected.name.lowercase(),
                     onSelect = { onSelect(LspSource.valueOf(it.replaceFirstChar { c -> c.uppercase() })) },
                 )
                 when (selected) {
                     LspSource.Rustup -> RustupLspTab(lspManager = lspManager)
-                    LspSource.Latest -> LatestLspTab(
-                        lspManager = lspManager,
-                        channel = channel,
-                        onChannelChange = { channel = it },
-                        latestTag = latestTag,
-                        fetching = latestTag == null && !latestError,
-                        fetchError = latestError,
-                        onRefresh = { fetchTick++ },
-                    )
-                    LspSource.Versions -> VersionsLspTab(
-                        lspManager = lspManager,
-                        onOpenVersions = onOpenVersions,
-                    )
+                    LspSource.Versions -> VersionsLspTab(lspManager = lspManager, onShowAll = onShowAll)
                 }
             }
         },
@@ -504,19 +487,50 @@ private fun LspSourceCard(
 private fun RustupLspTab(lspManager: LspManager) {
     val scope = rememberCoroutineScope()
     val installed = lspManager.lsp.installedViaRustup
+    val rustupActive = lspManager.lsp.rustupActive
     val busy = lspManager.rustupBusy()
     val progress = lspManager.tracker.state("lsp:rustup:install").value
 
     Column(modifier = Modifier.padding(top = 12.dp)) {
         if (installed) {
-            OutlinedButton(
-                onClick = { scope.launch { lspManager.removeViaRustup { } } },
-                enabled = !busy,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Remove (rustup)")
+                if (rustupActive) {
+                    Icon(
+                        Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "In use",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    FilledTonalButton(
+                        onClick = { scope.launch { lspManager.useViaRustup { } } },
+                        enabled = !busy,
+                    ) {
+                        Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Use")
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+                OutlinedButton(
+                    onClick = { scope.launch { lspManager.removeViaRustup { } } },
+                    enabled = !busy,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Remove (rustup)")
+                }
             }
         } else {
             Button(onClick = { scope.launch { lspManager.installViaRustup { } } }, enabled = !busy) {
@@ -535,125 +549,7 @@ private fun RustupLspTab(lspManager: LspManager) {
 }
 
 @Composable
-private fun LatestLspTab(
-    lspManager: LspManager,
-    channel: LspChannel,
-    onChannelChange: (LspChannel) -> Unit,
-    latestTag: String?,
-    fetching: Boolean,
-    fetchError: Boolean,
-    onRefresh: () -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SegmentedChoice(
-                options = listOf("Stable", "Nightly"),
-                selected = channel.name,
-                onSelect = { onChannelChange(if (it == "Nightly") LspChannel.Nightly else LspChannel.Stable) },
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onRefresh) { Icon(Refresh, contentDescription = "Refresh") }
-        }
-
-        val tag = latestTag
-        val managed = tag?.let { t -> lspManager.lsp.versions.firstOrNull { it.tag == t } }
-        when {
-            fetching -> Row(
-                modifier = Modifier.padding(top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                InlineSpinner(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("Checking GitHub...")
-            }
-            fetchError || tag == null -> Row(
-                modifier = Modifier.padding(top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    "Couldn't reach GitHub — check your connection.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onRefresh) { Text("Retry") }
-            }
-            else -> {
-                val label = if (channel == LspChannel.Stable) "Latest stable" else "Nightly (rolling)"
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "$label: $tag",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (managed?.isActive == true) {
-                        Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("In use", color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                Row(
-                    modifier = Modifier.padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    when {
-                        managed?.isActive == true -> OutlinedButton(
-                            onClick = { scope.launch { lspManager.remove(tag) { } } },
-                            enabled = !lspManager.isBusy(tag),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        ) {
-                            Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Remove")
-                        }
-                        managed != null -> {
-                            FilledTonalButton(onClick = { scope.launch { lspManager.use(tag) { } } }, enabled = !lspManager.isBusy(tag)) {
-                                Icon(Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Use")
-                            }
-                            OutlinedButton(
-                                onClick = { scope.launch { lspManager.remove(tag) { } } },
-                                enabled = !lspManager.isBusy(tag),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            ) {
-                                Icon(Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Remove")
-                            }
-                        }
-                        else -> Button(onClick = { scope.launch { lspManager.install(tag) { } } }, enabled = !lspManager.isBusy(tag)) {
-                            Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (channel == LspChannel.Stable) "Install latest stable" else "Install nightly")
-                        }
-                    }
-                }
-                if (lspManager.isBusy(tag)) {
-                    OpProgressBar(
-                        progress = lspManager.installProgress(tag),
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VersionsLspTab(
-    lspManager: LspManager,
-    onOpenVersions: () -> Unit,
-) {
+private fun VersionsLspTab(lspManager: LspManager, onShowAll: () -> Unit) {
     val scope = rememberCoroutineScope()
     val releases = lspManager.releases
     Column {
@@ -662,7 +558,7 @@ private fun VersionsLspTab(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Pick a version from rust-analyzer's releases",
+                "Pick a version from rust-analyzer's releases — latest stable and nightly are pinned on top",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
@@ -691,15 +587,54 @@ private fun VersionsLspTab(
                 modifier = Modifier.padding(vertical = 8.dp),
             )
             else -> {
-                releases.take(10).forEach { release ->
-                    ReleaseVersionRow(lspManager = lspManager, release = release)
+                val stable = releases.firstOrNull { !it.isNightly }
+                val nightly = releases.firstOrNull { it.isNightly }
+                val others = releases.filter { it != stable && it != nightly }
+                // Resolved once per lsp-state change and looked up by tag below, instead of every
+                // row scanning the full versions list on every recomposition.
+                val versionsByTag = remember(lspManager.lsp.versions) {
+                    lspManager.lsp.versions.associateBy { it.tag }
                 }
-                if (releases.size > 10) {
-                    TextButton(
-                        onClick = onOpenVersions,
-                        modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
+
+                if (stable != null) {
+                    ReleaseVersionRow(
+                        lspManager = lspManager,
+                        release = stable,
+                        managed = versionsByTag[stable.tag],
+                        title = "Latest stable",
+                        subtitle = stable.tag,
+                        icon = Star,
+                    )
+                }
+                if (nightly != null) {
+                    ReleaseVersionRow(
+                        lspManager = lspManager,
+                        release = nightly,
+                        managed = versionsByTag[nightly.tag],
+                        title = "nightly (rolling)",
+                        subtitle = nightly.tag,
+                        icon = Moon,
+                    )
+                }
+                if (stable != null || nightly != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                }
+
+                others.take(8).forEach { release ->
+                    ReleaseVersionRow(
+                        lspManager = lspManager,
+                        release = release,
+                        managed = versionsByTag[release.tag],
+                    )
+                }
+                if (others.size > 8) {
+                    OutlinedButton(
+                        onClick = onShowAll,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
-                        Text("Show all (${releases.size})")
+                        Text("Show all ${others.size} releases")
                     }
                 }
             }
@@ -709,7 +644,8 @@ private fun VersionsLspTab(
 
 private fun statusLine(lsp: LspState): String = when {
     lsp.activeVersion != null -> "Using rust-analyzer ${lsp.activeVersion} (GitHub release)"
-    lsp.installedViaRustup -> "Using rustup component rust-analyzer"
+    lsp.rustupActive -> "Using rustup component rust-analyzer"
+    lsp.installedViaRustup -> "Installed via rustup — activate it with Use"
     else -> "Not installed yet"
 }
 
@@ -786,7 +722,7 @@ private fun InstallToolchainRow(
     logger: Logger,
     onDone: suspend () -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     val op = remember { mutableStateOf<OpProgress?>(null) }
     SettingsCard(
         title = "Install a toolchain",
@@ -921,7 +857,7 @@ private fun AddTargetRow(
     logger: Logger,
     onDone: suspend () -> Unit,
 ) {
-    var target by remember { mutableStateOf("") }
+    var target by rememberSaveable { mutableStateOf("") }
     val op = remember { mutableStateOf<OpProgress?>(null) }
     SettingsCard(
         title = "Add a target",
@@ -961,4 +897,110 @@ private fun AddTargetRow(
             }
         },
     )
+}
+
+/** A single release row: state line (In use / Installed / Not installed), a live progress bar
+ *  while installing, and Install/Use/Remove actions. [title] overrides the default label
+ *  (used to pin "Latest stable" and "nightly" on top of the versions list). [managed] is
+ *  resolved once by the caller (a tag -> Toolchain map built from [LspManager.lsp]) instead of
+ *  every row scanning the full versions list on every recomposition. [icon] marks the pinned
+ *  latest-stable (star) and nightly (moon) rows; plain releases pass null. */
+@Composable
+fun ReleaseVersionRow(
+    lspManager: LspManager,
+    release: GithubRelease,
+    managed: ManagedLspVersion?,
+    title: String? = null,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    horizontalPadding: Dp = 16.dp,
+) {
+    val scope = rememberCoroutineScope()
+    val logger: Logger = rememberLogger()
+    val busy = lspManager.isBusy(release.tag)
+    val progress = lspManager.installProgress(release.tag)
+
+    val displayTitle = title ?: if (release.isNightly) "nightly (rolling)" else release.tag
+    val stateText = when {
+        managed?.isActive == true -> "In use"
+        managed != null -> "Installed"
+        else -> "Not installed"
+    }
+    val description = buildString {
+        if (subtitle != null) {
+            append(subtitle).append(" \u00b7 ")
+        }
+        append(stateText)
+    }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(displayTitle, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (managed?.isActive == true) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            when {
+                managed?.isActive == true -> OutlinedButton(
+                    onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.remove(tag, onLine) } } },
+                    enabled = !busy,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Remove") }
+                managed != null -> {
+                    FilledTonalButton(
+                        onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.use(tag, onLine) } } },
+                        enabled = !busy,
+                    ) { Text("Use") }
+                    OutlinedButton(
+                        onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.remove(tag, onLine) } } },
+                        enabled = !busy,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text("Remove") }
+                }
+                else -> Button(
+                    onClick = { scope.launch { runManaged(lspManager, logger, release.tag) { tag, onLine -> lspManager.install(tag, onLine) } } },
+                    enabled = !busy,
+                ) {
+                    Icon(Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Install")
+                }
+            }
+        }
+        if (busy) {
+            OpProgressBar(
+                progress = progress,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            )
+        }
+    }
+}
+
+private suspend fun runManaged(
+    lspManager: LspManager,
+    logger: Logger,
+    tag: String,
+    action: suspend (tag: String, onLine: (String) -> Unit) -> Boolean,
+) {
+    val ok = action(tag) { logger.info(LOG_TAG, it) }
+    if (!ok) logger.info(LOG_TAG, "operation failed (see log above)")
 }

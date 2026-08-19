@@ -14,6 +14,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,13 +26,18 @@ import androidx.compose.ui.unit.dp
 import com.klyx.api.plugin.PluginSettings
 import com.uliteamr.rustupmanager.icons.Close
 import com.uliteamr.rustupmanager.icons.Server
+import com.uliteamr.rustupmanager.icons.Wrench
 import com.uliteamr.rustupmanager.lsp.LspStatus
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerSession
 import com.uliteamr.rustupmanager.settings.SettingsKeys
 import kotlinx.coroutines.launch
 
 @Composable
-fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
+fun LspScreen(
+    settings: PluginSettings,
+    onOpenFeatureParams: () -> Unit,
+    onBack: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
 
     val status = RustAnalyzerSession.status
@@ -60,6 +66,13 @@ fun LspScreen(settings: PluginSettings, onBack: () -> Unit) {
                 } else {
                     null
                 },
+            )
+
+            SettingsCard(
+                icon = Wrench,
+                title = "Feature Parameters and Initialize",
+                description = "Parameters sent to rust-analyzer on the initialize request — every feature on by default, toggleable",
+                trailing = { TextButton(onClick = onOpenFeatureParams) { Text("Configure") } },
             )
 
             OutlinedButton(

@@ -5,6 +5,31 @@ All notable changes to Rustup Manager are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-19
+
+### Added
+
+- **Live initialization-options editor** — "Feature Parameters and Initialize" is now a settings.json-style editor: one JSON object is the single source of truth, stored in settings and sent to rust-analyzer verbatim. The four built-in toggles (diagnostics, check on save, current target only, binding-mode hints) read and write their paths of that object live; custom parameters render as editable rows straight from the JSON (booleans as switches, strings and numbers as text fields, nested objects and arrays as recursive rows); and a raw JSON box shows the same object and is fully editable. Every change is saved immediately.
+- **Custom parameters** — add your own keys (bool / text / number / object) with one tap, edit or delete them, and they land in the JSON object immediately.
+- **Real download progress** — every install operation (rustup, toolchains, components, targets, rust-analyzer builds) now reports percent and downloaded/total bytes instead of an indeterminate spinner.
+- **Multiline text fields** — the dashboard input styling now has a multiline variant, used by the raw-JSON editor.
+- **Release list cache** — the rust-analyzer release list is saved after the first fetch and rendered instantly from cache on later visits, while a background check re-queries GitHub; newly published versions appear in the list automatically without a manual refresh, and a failed check never blanks a cached list.
+- **Pinned releases card** — "Latest & nightly" is its own card at the top of the versions list; below it only the most recent 8 releases are shown, with a **Show all** button that opens a full standalone page.
+
+### Changed
+
+- **Language server card** — one vertical card with `rustup | versions` sources; **Latest stable** and **nightly** are pinned at the top in their own card, and the separate versions screen became the Show-all page.
+- **Single active server source** — "Use" now switches exclusively: taking a GitHub version removes the rustup component, and taking the rustup component removes the managed binary, so both can never fight.
+- **Feature Parameters card** moved to the top of the LSP screen, and the four toggle cards now carry distinct icons.
+- **Dashboard text fields** — Material 3 tonal fill with a primary-color focus border.
+- **Plugin icon** is only shown in the store; the toolbar action no longer duplicates it.
+- **Versions tab** — the release list is no longer blanked while re-fetching; new releases replace it in place.
+
+### Fixed
+
+- **Scroll state** — scrolling away from the dashboard lists no longer resets typed input or re-fetches (and blanks) the rust-analyzer release list; fetching now lives in the screen body instead of inside the scrollable item.
+- **Custom features migration** — features added through the previous editor are merged into the new JSON object automatically on first open, and the legacy per-toggle keys keep working as a fallback until the new editor is opened.
+
 ## [1.1.0] - 2026-08-14
 
 ### Added

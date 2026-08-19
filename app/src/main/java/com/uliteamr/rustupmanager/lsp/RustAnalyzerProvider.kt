@@ -9,10 +9,16 @@ import com.klyx.lsp.LogMessageParams
 import com.klyx.lsp.MessageType
 import com.klyx.lsp.server.LanguageClient
 import com.klyx.lsp.server.LanguageServer
+import com.klyx.lsp.types.LSPAny
 import com.uliteamr.rustupmanager.settings.SettingsKeys
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Spawns rust-analyzer by its bare command name rather than an absolute path. Klyx resolves a
@@ -29,6 +35,89 @@ class RustAnalyzerProvider(
     private val scope: CoroutineScope,
     private val settings: PluginSettings,
 ) : LanguageServerProvider {
+
+    /**
+     * Initialization options sent in the `initialize` request. This plugin was the
+     * first to use the `LanguageServerProvider.initializationOptions()` SDK hook,
+     * originally to fix a real gap: rust-analyzer's defaults only surface semantic
+     * diagnostics, so macro-expansion errors and cargo-check results never reached
+     * the editor.
+     *
+     * Since 1.2 the source of truth is a single JSON object the user edits live in
+     * "Feature Parameters and Initialize" (stored under SettingsKeys.rawInitOptions):
+     * when it exists and parses as an object, it is sent verbatim. Otherwise the
+     * legacy per-toggle keys (and the old custom-features list) are merged into the
+     * old shape, so installs that never opened the new screen keep working unchanged.
+     *
+     * Built with JsonObject/JsonPrimitive constructors on purpose: the host's
+     * release APK is R8-minified and prunes JsonObjectBuilder/JsonElementBuildersKt
+     * (nothing in the host references them), so the buildJsonObject/put API would
+     * fail at runtime with NoClassDefFoundError.
+     */
+    override fun initializationOptions(): LSPAny {
+        val raw = settings.getString(SettingsKeys.rawInitOptions, "") ?: ""
+        if (raw.isNotBlank()) {
+            runCatching {
+                val parsed = Json.parseToJsonElement(raw)
+                if (parsed is JsonObject) return parsed
+            }
+        }
+
+        val currentTargetOnly = settings.getBoolean(SettingsKeys.currentTargetOnly, true)
+        return JsonObject(
+            buildMap {
+                put("check", JsonObject(mapOf("allTargets" to JsonPrimitive(!currentTargetOnly))))
+                if (settings.getBoolean(SettingsKeys.macroDiagnostics, true)) {
+                    put(
+                        "diagnostics",
+                        JsonObject(
+                            mapOf(
+                                "enable" to JsonPrimitive(true),
+                                "experimental" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
+                            )
+                        )
+                    )
+                }
+                if (settings.getBoolean(SettingsKeys.checkOnSave, true)) {
+                    put(
+                        "checkOnSave",
+                        JsonObject(
+                            mapOf(
+                                "enable" to JsonPrimitive(true),
+                                "allTargets" to JsonPrimitive(!currentTargetOnly)
+                            )
+                        )
+                    )
+                }
+                if (settings.getBoolean(SettingsKeys.bindingModeHints, true)) {
+                    put(
+                        "inlayHints",
+                        JsonObject(
+                            mapOf(
+                                "bindingModeHints" to JsonObject(mapOf("enable" to JsonPrimitive(true)))
+                            )
+                        )
+                    )
+                }
+
+                // Legacy custom features from before the live JSON editor: {name, type, value}.
+                val custom = settings.getString(SettingsKeys.customInitOptions, "") ?: ""
+                if (custom.isNotBlank()) {
+                    runCatching {
+                        val entries = (Json.parseToJsonElement(custom) as? JsonArray) ?: return@runCatching
+                        for (entry in entries) {
+                            val obj = entry as? JsonObject ?: continue
+                            val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: continue
+                            if (name.isBlank()) continue
+                            val type = (obj["type"] as? JsonPrimitive)?.contentOrNull ?: "boolean"
+                            val value = (obj["value"] as? JsonPrimitive)?.contentOrNull ?: ""
+                            put(name, if (type != "boolean") JsonPrimitive(value) else JsonPrimitive(value != "false"))
+                        }
+                    }
+                }
+            }
+        )
+    }
 
     override suspend fun startServer(client: LanguageClient): LanguageServer = withContext(Dispatchers.IO) {
         try {

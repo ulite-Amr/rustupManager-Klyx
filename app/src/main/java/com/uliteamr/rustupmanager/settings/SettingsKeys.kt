@@ -15,6 +15,28 @@ object SettingsKeys {
     /** Whether the dashboard toolbar button only shows while a .rs file is open. */
     const val toolbarAutoHide = "toolbar.autoHide"
 
+    /** initializationOptions: show binding-mode hints (mut/ref prefixes) in the editor. */
+    const val bindingModeHints = "initOptions.bindingModeHints"
+
+    /** initializationOptions: report macro-expansion diagnostics (experimental diagnostics). */
+    const val macroDiagnostics = "initOptions.macroDiagnostics"
+
+    /** initializationOptions: run cargo check on save so all diagnostics (not just semantic) appear. */
+    const val checkOnSave = "initOptions.checkOnSave"
+
+    /** initializationOptions: only check the current target instead of all targets. */
+    const val currentTargetOnly = "initOptions.currentTargetOnly"
+
+    /** initializationOptions: user-defined extra features, JSON array of {name, type, value}. */
+    const val customInitOptions = "initOptions.custom"
+
+    /** initializationOptions: raw JSON object overriding every other option; blank when unused. */
+    const val rawInitOptions = "initOptions.raw"
+
+    /** Persisted GitHub release list (JSON array of {tag, nightly}) so the versions list
+     *  renders instantly from cache while a background check looks for newer releases. */
+    const val releasesCache = "lsp.releasesCache"
+
     const val autoCheckUpdates = "autoCheckUpdates"
     const val checkIntervalDays = "checkIntervalDays"
     const val defaultChannel = "defaultChannel"

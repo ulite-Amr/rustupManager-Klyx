@@ -2,7 +2,10 @@ package com.uliteamr.rustupmanager.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,12 +34,16 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -251,16 +258,36 @@ fun OpProgressBar(
             ExpressiveLinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         Text(
-            text = if (fraction != null) {
-                "${(fraction * 100).roundToInt()}%"
-            } else {
-                progress?.label.orEmpty()
-            },
+            text = progressCaption(progress),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
         )
+    }
+}
+
+/** "43% · 21.3 MiB / 48.9 MiB" when the download size is known, falling back to the label. */
+private fun progressCaption(progress: com.uliteamr.rustupmanager.rustup.OpProgress?): String {
+    val progress = progress ?: return ""
+    val detail = buildString {
+        progress.fraction?.let { append("${(it * 100).roundToInt()}%") }
+        progress.downloadedBytes?.let { downloaded ->
+            if (isNotEmpty()) append(" · ")
+            append(formatBytes(downloaded))
+            progress.totalBytes?.let { total -> append(" / ").append(formatBytes(total)) }
+        }
+    }
+    return detail.ifEmpty { progress.label }
+}
+
+private fun formatBytes(bytes: Long): String {
+    val value = bytes.toDouble()
+    return when {
+        bytes >= 1L shl 30 -> "%.1f GiB".format(value / (1L shl 30))
+        bytes >= 1L shl 20 -> "%.1f MiB".format(value / (1L shl 20))
+        bytes >= 1L shl 10 -> "%.1f KiB".format(value / (1L shl 10))
+        else -> "$bytes B"
     }
 }
 
@@ -271,28 +298,46 @@ fun AppTextField(
     placeholder: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    multiline: Boolean = false,
+    monospace: Boolean = false,
 ) {
-    androidx.compose.foundation.text.BasicTextField(
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val fieldStyle = MaterialTheme.typography.bodyMedium.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+        fontFamily = if (monospace) FontFamily.Monospace else null,
+    )
+    BasicTextField(
         value = value,
         onValueChange = onValueChange,
         enabled = enabled,
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+        singleLine = !multiline,
+        textStyle = fieldStyle,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        interactionSource = interactionSource,
         modifier = modifier
             .clip(FieldShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, FieldShape),
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                shape = FieldShape,
+            ),
         decorationBox = { innerTextField ->
             Box(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.padding(
+                    horizontal = 16.dp,
+                    vertical = if (multiline) 14.dp else 12.dp,
+                ),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (value.isEmpty()) {
                     Text(
                         placeholder,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = if (monospace) FontFamily.Monospace else null,
+                        ),
                     )
                 }
                 innerTextField()

@@ -25,10 +25,8 @@ import com.klyx.api.ui.ScreenId
 import com.klyx.api.ui.ScreenRegistry
 import com.klyx.api.ui.ToolbarAction
 import com.klyx.api.ui.ToolbarCategory
-import com.klyx.api.ui.ToolbarIcon
 import com.klyx.api.ui.ToolbarRegistry
 import com.klyx.core.event.EventSubscription
-import com.uliteamr.rustupmanager.icons.Wrench
 import com.uliteamr.rustupmanager.lsp.LspStatus
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerProvider
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerSession
@@ -36,6 +34,7 @@ import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.settings.RustupSettingsContent
 import com.uliteamr.rustupmanager.settings.SettingsKeys
 import com.uliteamr.rustupmanager.ui.DashboardScreen
+import com.uliteamr.rustupmanager.ui.FeatureParamsScreen
 import com.uliteamr.rustupmanager.ui.LspManager
 import com.uliteamr.rustupmanager.ui.LspScreen
 import com.uliteamr.rustupmanager.ui.LspVersionsScreen
@@ -49,6 +48,7 @@ import kotlinx.coroutines.launch
 private val DASHBOARD_SCREEN = ScreenId("com.uliteamr.rustupmanager.dashboard")
 private val LSP_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp")
 private val LSP_VERSIONS_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp.versions")
+private val FEATURE_PARAMS_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp.featureParams")
 private const val TOOLBAR_ACTION_ID = "com.uliteamr.rustupmanager.open"
 private const val LSP_PATTERN = "rs"
 private const val UPDATE_CHECK_LOOP_DELAY_HOURS = 6L
@@ -78,7 +78,10 @@ class RustupPlugin : KlyxPlugin {
     private val settings: PluginSettings by runtime()
 
     private val rustup = RustupController()
-    private val lspManager = LspManager(rustup)
+    // The settings delegate must not be touched here: the host forbids accessing runtime
+    // services in plugin constructors. LspManager receives a provider and resolves the
+    // service lazily on first use (inside onLoad or later).
+    private val lspManager = LspManager(rustup) { settings }
     private var lspRegistration: LanguageServerRegistration? = null
     private var settingsRegistration: PluginSettingsRegistration? = null
     private var fileOpenedSubscription: EventSubscription? = null
@@ -98,7 +101,15 @@ class RustupPlugin : KlyxPlugin {
         }
 
         screens[LSP_SCREEN] = {
-            LspScreen(settings = settings, onBack = { navigator.navigateBack() })
+            LspScreen(
+                settings = settings,
+                onOpenFeatureParams = { navigator.navigateTo(NavDestination.Custom(FEATURE_PARAMS_SCREEN)) },
+                onBack = { navigator.navigateBack() },
+            )
+        }
+
+        screens[FEATURE_PARAMS_SCREEN] = {
+            FeatureParamsScreen(settings = settings, onBack = { navigator.navigateBack() })
         }
 
         screens[LSP_VERSIONS_SCREEN] = {
@@ -137,6 +148,7 @@ class RustupPlugin : KlyxPlugin {
         screens.unregister(DASHBOARD_SCREEN)
         screens.unregister(LSP_SCREEN)
         screens.unregister(LSP_VERSIONS_SCREEN)
+        screens.unregister(FEATURE_PARAMS_SCREEN)
         toolbar.unregister(TOOLBAR_ACTION_ID)
         toolbarActionRegistered = false
         lspRegistration?.unregister()
@@ -162,7 +174,6 @@ class RustupPlugin : KlyxPlugin {
     private fun createToolbarAction() = ToolbarAction(
         id = TOOLBAR_ACTION_ID,
         label = "Rust Toolchain",
-        icon = ToolbarIcon(Wrench),
         category = ToolbarCategory("Rust"),
         priority = 100,
         onClick = {
