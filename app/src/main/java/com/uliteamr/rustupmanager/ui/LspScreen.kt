@@ -125,9 +125,10 @@ fun LspScreen(
                 item(key = "features-label") { SectionLabel("rust-analyzer features") }
                 item(key = "features-note") {
                     Text(
-                        "Sent to rust-analyzer in the initialize request. The switch on each feature turns "
-                            + "its section on or off — off restores rust-analyzer's defaults. Tap next to a "
-                            + "switch to tune that feature's sub-options; every switch stores its exact value.",
+                    "Sent to rust-analyzer in the initialize request. A feature's switch is on while "
+                        + "all its sub-options are on, and flipping it off turns every sub-option off "
+                        + "with it. Tap next to a switch to tune the sub-options; every switch stores "
+                        + "its exact value.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),

@@ -66,7 +66,7 @@ val RA_FEATURES: List<RaFeatureSection> = listOf(
     ),
     RaFeatureSection(
         title = "Inlay hints",
-        description = "Inline annotations in the editor; off restores rust-analyzer's defaults",
+        description = "Inline annotations in the editor; the switch turns every hint type on or off",
         key = "inlayHints",
         masterEnable = false,
         subFeatures = listOf(
@@ -172,34 +172,26 @@ fun setPath(root: JsonObject, value: JsonElement, path: List<String>): JsonObjec
     return JsonObject(mapOf(key to setPath(child, value, path.drop(1))) + root.filterKeys { it != key })
 }
 
-/** Removes a top-level key. */
-fun removeKey(root: JsonObject, key: String): JsonObject = JsonObject(root.filterKeys { it != key })
-
 /** Encodes the options object for storage. */
 fun encodeOptions(json: JsonObject): String = Json.encodeToString(JsonElement.serializer(), json)
 
-/** Master switch state: the native `enable` flag where the section has one, otherwise whether
- *  the section is present in the stored object at all. */
+/** Master switch state: the native `enable` flag where the section has one, otherwise derived
+ *  from the sub-features — it is on only while every sub-switch is on. */
 fun masterChecked(section: RaFeatureSection, root: JsonObject): Boolean =
     if (section.masterEnable) {
         boolAt(root, true, section.key, "enable")
     } else {
-        (root[section.key] as? JsonObject) != null
+        section.subFeatures.all { boolAt(root, it.defaultValue, *it.path.toTypedArray()) }
     }
 
-/** Applies a master-switch flip: native-enable sections write the flag explicitly; the others
- *  create the section at rust-analyzer defaults or remove it entirely. */
+/** Applies a master-switch flip: native-enable sections write their flag explicitly; the
+ *  others are all-or-nothing — off switches every sub-feature off, on switches them all on. */
 fun setMaster(section: RaFeatureSection, root: JsonObject, on: Boolean): JsonObject {
     if (section.masterEnable) {
         return setPath(root, JsonPrimitive(on), listOf(section.key, "enable"))
     }
-    return if (on) {
-        val sectionObject = section.subFeatures.fold(JsonObject(emptyMap())) { acc, sub ->
-            merge(acc, nest(sub.path.drop(1), JsonPrimitive(sub.defaultValue)))
-        }
-        setPath(root, sectionObject, listOf(section.key))
-    } else {
-        removeKey(root, section.key)
+    return section.subFeatures.fold(root) { acc, sub ->
+        setPath(acc, JsonPrimitive(on), sub.path)
     }
 }
 
@@ -215,22 +207,6 @@ suspend fun loadInitOptions(settings: PluginSettings): JsonObject {
         settings.putString(SettingsKeys.rawInitOptions, encodeOptions(seed))
     }
     return seed
-}
-
-/** Builds {"a": {"b": {"c": value}}} from a path. */
-private fun nest(path: List<String>, value: JsonElement): JsonObject {
-    if (path.size == 1) return JsonObject(mapOf(path.first() to value))
-    return JsonObject(mapOf(path.first() to nest(path.drop(1), value)))
-}
-
-/** Shallow-merge of two objects, recursing into shared keys. */
-private fun merge(a: JsonObject, b: JsonObject): JsonObject {
-    val out = LinkedHashMap<String, JsonElement>(a)
-    b.forEach { (key, value) ->
-        val existing = out[key]
-        out[key] = if (existing is JsonObject && value is JsonObject) merge(existing, value) else value
-    }
-    return JsonObject(out)
 }
 
 /** Seeds the options object from the pre-1.2 per-toggle keys and the legacy custom-features
