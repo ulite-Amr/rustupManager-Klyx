@@ -2,9 +2,6 @@ package com.uliteamr.rustupmanager
 
 import com.klyx.api.NavDestination
 import com.klyx.api.Navigator
-import com.klyx.api.data.editor.WorkspaceTab
-import com.klyx.api.event.editor.FileOpenedEvent
-import com.klyx.api.event.eventBus
 import com.klyx.api.lsp.LanguageServerRegistration
 import com.klyx.api.lsp.LanguageServerRegistry
 import com.klyx.api.plugin.Author
@@ -15,18 +12,15 @@ import com.klyx.api.plugin.PluginSettings
 import com.klyx.api.plugin.PluginSettingsRegistration
 import com.klyx.api.plugin.PluginSettingsRegistry
 import com.klyx.api.plugin.plugin
-import com.klyx.api.plugin.pluginContext
 import com.klyx.api.plugin.pluginScope
 import com.klyx.api.plugin.runtime
 import com.klyx.api.plugin.showToast
-import com.klyx.api.service.Tabs
 import com.klyx.api.data.terminal.TerminalManager
 import com.klyx.api.ui.ScreenId
 import com.klyx.api.ui.ScreenRegistry
 import com.klyx.api.ui.ToolbarAction
 import com.klyx.api.ui.ToolbarCategory
 import com.klyx.api.ui.ToolbarRegistry
-import com.klyx.core.event.EventSubscription
 import com.uliteamr.rustupmanager.lsp.LspStatus
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerProvider
 import com.uliteamr.rustupmanager.lsp.RustAnalyzerSession
@@ -85,9 +79,6 @@ class RustupPlugin : KlyxPlugin {
     private val lspManager = LspManager(rustup) { settings }
     private var lspRegistration: LanguageServerRegistration? = null
     private var settingsRegistration: PluginSettingsRegistration? = null
-    private var fileOpenedSubscription: EventSubscription? = null
-    private var toolbarActionRegistered = false
-    private val openRsTabIds = mutableSetOf<String>()
 
     override suspend fun onLoad() {
         screens[DASHBOARD_SCREEN] = {
@@ -122,17 +113,9 @@ class RustupPlugin : KlyxPlugin {
 
         settingsRegistration = settingsRegistry.register { RustupSettingsContent() }
 
-        // With auto-hide enabled the toolbar action only shows once a .rs context exists (the
-        // host started rust-analyzer for a "rs" file, or a .rs tab is open). The plugin API has
-        // no tab-close/switch event, so we reconcile against Tabs on every file-open event (and
-        // on any settings change); the click itself always opens the dashboard.
-        syncToolbarVisibility()
-        fileOpenedSubscription = pluginContext.eventBus.subscribe(FileOpenedEvent::class) {
-            if (it.fileName.endsWith(".rs")) openRsTabIds += it.tabId
-            pruneOpenRsTabs()
-            syncToolbarVisibility()
-        }
-        pluginScope.launch { settings.values.collect { syncToolbarVisibility() } }
+        // The toolbar action is always available and always opens the dashboard.
+        toolbar.unregister(TOOLBAR_ACTION_ID)
+        toolbar.register(createToolbarAction())
         pluginScope.launch { observeIndexing() }
     }
 
@@ -145,32 +128,13 @@ class RustupPlugin : KlyxPlugin {
     }
 
     override suspend fun onUnload() {
-        fileOpenedSubscription?.cancel()
-        fileOpenedSubscription = null
         screens.unregister(DASHBOARD_SCREEN)
         screens.unregister(LSP_SCREEN)
         screens.unregister(LSP_VERSIONS_SCREEN)
         screens.unregister(FEATURE_PARAMS_SCREEN)
         toolbar.unregister(TOOLBAR_ACTION_ID)
-        toolbarActionRegistered = false
         lspRegistration?.unregister()
         settingsRegistration?.unregister()
-    }
-
-    /** Shows the toolbar action only while a .rs context exists, unless auto-hide is disabled. */
-    private fun syncToolbarVisibility() {
-        val autoHide = settings.getBoolean(SettingsKeys.toolbarAutoHide, false)
-        val show = !autoHide || hasRustContext()
-        if (show && !toolbarActionRegistered) {
-            // The host's registry appends without dedup, so a stale entry from a previous
-            // registration would otherwise duplicate the icon; drop any leftovers first.
-            toolbar.unregister(TOOLBAR_ACTION_ID)
-            toolbar.register(createToolbarAction())
-            toolbarActionRegistered = true
-        } else if (!show && toolbarActionRegistered) {
-            toolbar.unregister(TOOLBAR_ACTION_ID)
-            toolbarActionRegistered = false
-        }
     }
 
     private fun createToolbarAction() = ToolbarAction(
@@ -182,21 +146,6 @@ class RustupPlugin : KlyxPlugin {
             navigator.navigateTo(NavDestination.Custom(DASHBOARD_SCREEN))
         },
     )
-
-    /** True while a Rust context exists: the host started rust-analyzer for a "rs" file, a .rs
-     *  tab is currently open, or one was opened this session. Mirrors how the markdown viewer
-     *  gates its runner on file type; here the host's own provider lookup is the gate. */
-    private fun hasRustContext(): Boolean =
-        RustAnalyzerSession.status is LspStatus.Running ||
-            tabs.opened.any { it is WorkspaceTab.TextFile && it.file.name.endsWith(".rs") } ||
-            openRsTabIds.isNotEmpty()
-
-    /** Drops .rs tab ids that are no longer open, but only when Tabs looks fresh (non-empty).
-     *  A stale/empty Tabs list would otherwise wipe out ids tracked via FileOpenedEvent. */
-    private fun pruneOpenRsTabs() {
-        val opened = tabs.opened
-        if (opened.isNotEmpty()) openRsTabIds.removeAll { id -> opened.none { it.id == id } }
-    }
 
     /** Toasts once per LSP process for the first indexing cycle (begin + finish), so typing
      *  bursts and watchdog flicker don't re-toast on every keystroke. */

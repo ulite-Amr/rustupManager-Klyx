@@ -44,9 +44,7 @@ fun LspScreen(
     val isIndexing = RustAnalyzerSession.isIndexing
     val indexingProgress = RustAnalyzerSession.indexingProgress
 
-    var reverseCompletion by remember { mutableStateOf(settings.getBoolean(SettingsKeys.reverseCompletion, false)) }
     var indexingToast by remember { mutableStateOf(settings.getBoolean(SettingsKeys.indexingToast, true)) }
-    var toolbarAutoHide by remember { mutableStateOf(settings.getBoolean(SettingsKeys.toolbarAutoHide, false)) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         ScreenHeader(title = "Language Server", onBack = onBack)
@@ -100,16 +98,6 @@ fun LspScreen(
 
             SectionLabel("Features")
             FeatureRow(
-                title = "Completion order fix",
-                description = "Reverses rust-analyzer's completion results. Off by default: rust-analyzer already returns the most relevant entry on top",
-                checked = reverseCompletion,
-                enabled = true,
-                onToggle = { enabled ->
-                    reverseCompletion = enabled
-                    scope.launch { settings.putBoolean(SettingsKeys.reverseCompletion, enabled) }
-                },
-            )
-            FeatureRow(
                 title = "Indexing notifications",
                 description = "Shows a toast when rust-analyzer starts and finishes indexing",
                 checked = indexingToast,
@@ -118,66 +106,6 @@ fun LspScreen(
                     indexingToast = enabled
                     scope.launch { settings.putBoolean(SettingsKeys.indexingToast, enabled) }
                 },
-            )
-            FeatureRow(
-                title = "Toolbar auto-hide",
-                description = "Only shows the Rust Toolchain button while a .rs file is open",
-                checked = toolbarAutoHide,
-                enabled = true,
-                onToggle = { enabled ->
-                    toolbarAutoHide = enabled
-                    scope.launch { settings.putBoolean(SettingsKeys.toolbarAutoHide, enabled) }
-                },
-            )
-            FeatureRow(
-                title = "Diagnostics",
-                description = "Errors and warnings shown in the editor · managed by Klyx",
-                checked = true,
-                enabled = false,
-            )
-            FeatureRow(
-                title = "Inlay hints",
-                description = "Inline type hints in the editor · managed by Klyx (editor setting)",
-                checked = true,
-                enabled = false,
-            )
-
-            SectionLabel("Not available yet")
-            FeatureRow(
-                title = "Hover",
-                description = "Symbol info on hover · not implemented in Klyx yet",
-                checked = false,
-                enabled = false,
-            )
-            FeatureRow(
-                title = "Code actions",
-                description = "Quick fixes and refactors · not implemented in Klyx yet",
-                checked = false,
-                enabled = false,
-            )
-            FeatureRow(
-                title = "Go to definition",
-                description = "Jump to a symbol's definition · not implemented in Klyx yet",
-                checked = false,
-                enabled = false,
-            )
-            FeatureRow(
-                title = "Find references",
-                description = "Locate all usages of a symbol · not implemented in Klyx yet",
-                checked = false,
-                enabled = false,
-            )
-            FeatureRow(
-                title = "Rename symbol",
-                description = "Workspace-wide rename · not implemented in Klyx yet",
-                checked = false,
-                enabled = false,
-            )
-            FeatureRow(
-                title = "Signature help",
-                description = "Parameter hints while typing a call · not implemented in Klyx yet",
-                checked = false,
-                enabled = false,
             )
         }
     }

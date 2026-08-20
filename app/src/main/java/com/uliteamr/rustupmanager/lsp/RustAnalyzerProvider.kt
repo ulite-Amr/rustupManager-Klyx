@@ -138,15 +138,7 @@ class RustAnalyzerProvider(
                 stdout = RustAnalyzerSession.wrapStdout(handle.stdout),
                 stdin = handle.stdin,
             )
-
-            // rust-analyzer already returns completion items ordered by relevance (best first),
-            // and Klyx preserves the server's order verbatim. The reversal workaround is off by
-            // default; it exists only so users who preferred the old behavior can re-enable it.
-            if (settings.getBoolean(SettingsKeys.reverseCompletion, false)) {
-                ReversingLanguageServer(server)
-            } else {
-                server
-            }
+            server
         } catch (e: Exception) {
             // Klyx's host-side LspManager swallows exceptions from startServer via runCatching,
             // so without this the failure would be completely invisible. Forward it to Klyx's LSP log.
