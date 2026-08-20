@@ -46,11 +46,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.klyx.api.service.Logger
-import com.klyx.api.service.error
-import com.klyx.api.service.info
-import com.klyx.api.service.rememberLogger
-import com.klyx.api.service.warn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.graphics.vector.ImageVector

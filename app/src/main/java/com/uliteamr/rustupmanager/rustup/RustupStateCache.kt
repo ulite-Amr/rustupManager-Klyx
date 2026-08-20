@@ -19,7 +19,7 @@ import kotlinx.serialization.json.contentOrNull
  */
 object RustupStateCache {
 
-    fun save(settings: PluginSettings, state: RustupState.Ready) {
+    suspend fun save(settings: PluginSettings, state: RustupState.Ready) {
         settings.putString(SettingsKeys.stateCache, encode(state))
     }
 
