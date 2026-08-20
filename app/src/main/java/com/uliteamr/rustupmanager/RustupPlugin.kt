@@ -28,7 +28,6 @@ import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.settings.RustupSettingsContent
 import com.uliteamr.rustupmanager.settings.SettingsKeys
 import com.uliteamr.rustupmanager.ui.DashboardScreen
-import com.uliteamr.rustupmanager.ui.FeatureParamsScreen
 import com.uliteamr.rustupmanager.ui.LspManager
 import com.uliteamr.rustupmanager.ui.LspScreen
 import com.uliteamr.rustupmanager.ui.LspVersionsScreen
@@ -42,7 +41,6 @@ import kotlinx.coroutines.launch
 private val DASHBOARD_SCREEN = ScreenId("com.uliteamr.rustupmanager.dashboard")
 private val LSP_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp")
 private val LSP_VERSIONS_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp.versions")
-private val FEATURE_PARAMS_SCREEN = ScreenId("com.uliteamr.rustupmanager.lsp.featureParams")
 private const val TOOLBAR_ACTION_ID = "com.uliteamr.rustupmanager.open"
 private const val LSP_PATTERN = "rs"
 private const val UPDATE_CHECK_LOOP_DELAY_HOURS = 6L
@@ -95,13 +93,8 @@ class RustupPlugin : KlyxPlugin {
         screens[LSP_SCREEN] = {
             LspScreen(
                 settings = settings,
-                onOpenFeatureParams = { navigator.navigateTo(NavDestination.Custom(FEATURE_PARAMS_SCREEN)) },
                 onBack = { navigator.navigateBack() },
             )
-        }
-
-        screens[FEATURE_PARAMS_SCREEN] = {
-            FeatureParamsScreen(settings = settings, onBack = { navigator.navigateBack() })
         }
 
         screens[LSP_VERSIONS_SCREEN] = {
@@ -130,7 +123,6 @@ class RustupPlugin : KlyxPlugin {
         screens.unregister(DASHBOARD_SCREEN)
         screens.unregister(LSP_SCREEN)
         screens.unregister(LSP_VERSIONS_SCREEN)
-        screens.unregister(FEATURE_PARAMS_SCREEN)
         toolbar.unregister(TOOLBAR_ACTION_ID)
         lspRegistration?.unregister()
         settingsRegistration?.unregister()

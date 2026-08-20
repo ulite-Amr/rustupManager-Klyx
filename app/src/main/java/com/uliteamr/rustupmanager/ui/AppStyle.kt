@@ -113,11 +113,12 @@ fun SettingsCard(
     icon: ImageVector? = null,
     title: String? = null,
     description: String? = null,
+    modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null,
     content: (@Composable () -> Unit)? = null,
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape = CardShape,
