@@ -48,7 +48,7 @@ private const val UPDATE_CHECK_LOOP_DELAY_HOURS = 6L
 @PluginManifest(
     id = "com.uliteamr.rustupmanager",
     name = "Rustup Manager",
-    version = "1.2.0",
+    version = "1.2.1",
     minAppVersion = "4.3.0",
     description = "Full Rust toolchain manager built on rustup: install and switch toolchains, manage components and targets, and get rust-analyzer wired up as a language server automatically.",
     icon = "icon.png",

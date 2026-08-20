@@ -5,6 +5,26 @@ All notable changes to Rustup Manager are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-08-20
+
+### Added
+
+- **Instant dashboard** — the dashboard opens straight into the last known state (toolchains, components, targets, language server) instead of showing "Checking rustup..." on every visit; the real check runs in the background and only switches to the setup/error pages when it confirms a problem.
+- **rust-analyzer feature catalog** — replaces the JSON editor: every feature is a switch with an expandable drawer of sub-options (inlay hints, completion, hover, cargo, proc macros, typing, diagnostics, check and more). A feature's master switch mirrors its sub-options — off turns every sub-option off, on turns them all on.
+- **Background-refresh indicator** — a slim progress bar under the header while the dashboard re-checks rustup in the background.
+
+### Changed
+
+- **Trimmed release list** — the dashboard now shows only the pinned latest stable, nightly and one more release; the rest live behind "Show all".
+- **Language Server page** — the JSON editor, custom-parameter and raw-JSON sections are gone; the catalog sits directly on the page with no extra navigation.
+- **Cleaner Language Server page** — removed the placeholder "not available yet" switches (hover, code actions, go-to-definition, find references, rename, signature help) and the disabled duplicates of diagnostics/inlay hints.
+
+### Fixed
+
+- **Stale dashboard lists** — after a background refresh the toolchain/component/target lists now actually update instead of keeping the first snapshot forever.
+- **Removed the completion-order toggle** — Klyx now preserves rust-analyzer's relevance order, so the reversal workaround and its server wrapper are gone.
+- **Removed the toolbar auto-hide toggle** — the toolbar action is always available and always opens the dashboard; the old .rs-tab tracking machinery is gone.
+
 ## [1.2.0] - 2026-08-20
 
 ### Added
