@@ -37,6 +37,10 @@ object SettingsKeys {
      *  renders instantly from cache while a background check looks for newer releases. */
     const val releasesCache = "lsp.releasesCache"
 
+    /** Last known dashboard snapshot (toolchains/components/targets/lsp) so the dashboard
+     *  renders instantly from cache while a background check re-validates it. */
+    const val stateCache = "state.cache"
+
     const val autoCheckUpdates = "autoCheckUpdates"
     const val checkIntervalDays = "checkIntervalDays"
     const val defaultChannel = "defaultChannel"

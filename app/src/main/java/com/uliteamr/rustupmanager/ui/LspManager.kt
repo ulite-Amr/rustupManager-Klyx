@@ -43,6 +43,12 @@ class LspManager(
 
     val tracker = OpTracker()
 
+    /** Seeds the shared LSP state from a cached snapshot so the dashboard renders instantly
+     *  on open; the next [refresh] replaces it with a live check. */
+    fun seed(lsp: LspState) {
+        this.lsp = lsp
+    }
+
     suspend fun refresh() {
         lsp = rustup.lspState()
     }

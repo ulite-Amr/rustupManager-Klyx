@@ -94,6 +94,7 @@ class RustupPlugin : KlyxPlugin {
             DashboardScreen(
                 rustup = rustup,
                 lspManager = lspManager,
+                settings = settings,
                 onOpenLsp = { navigator.navigateTo(NavDestination.Custom(LSP_SCREEN)) },
                 onOpenVersions = { navigator.navigateTo(NavDestination.Custom(LSP_VERSIONS_SCREEN)) },
                 onOpenTerminal = { terminalManager.openTerminal() },

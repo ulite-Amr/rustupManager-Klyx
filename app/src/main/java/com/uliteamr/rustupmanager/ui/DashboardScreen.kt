@@ -52,7 +52,14 @@ import com.klyx.api.service.info
 import com.klyx.api.service.rememberLogger
 import com.klyx.api.service.warn
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.klyx.api.plugin.PluginSettings
+import com.klyx.api.service.Logger
+import com.klyx.api.service.error
+import com.klyx.api.service.info
+import com.klyx.api.service.rememberLogger
+import com.klyx.api.service.warn
 import com.uliteamr.rustupmanager.icons.Add
 import com.uliteamr.rustupmanager.icons.Check
 import com.uliteamr.rustupmanager.icons.Delete
@@ -71,6 +78,7 @@ import com.uliteamr.rustupmanager.rustup.ManagedLspVersion
 import com.uliteamr.rustupmanager.rustup.OpProgress
 import com.uliteamr.rustupmanager.rustup.RustupController
 import com.uliteamr.rustupmanager.rustup.RustupState
+import com.uliteamr.rustupmanager.rustup.RustupStateCache
 import com.uliteamr.rustupmanager.rustup.Toolchain
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -109,6 +117,7 @@ private fun runOp(
 fun DashboardScreen(
     rustup: RustupController,
     lspManager: LspManager,
+    settings: PluginSettings,
     onOpenLsp: () -> Unit,
     onOpenVersions: () -> Unit,
     onOpenTerminal: () -> Unit,
@@ -117,12 +126,31 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
     val logger: Logger = rememberLogger()
     var state by remember { mutableStateOf<RustupState>(RustupState.Checking) }
+    var refreshing by remember { mutableStateOf(false) }
 
     suspend fun refresh() {
-        state = rustup.loadState()
+        refreshing = true
+        try {
+            val fresh = rustup.loadState()
+            if (fresh is RustupState.Ready) {
+                RustupStateCache.save(settings, fresh)
+                lspManager.seed(fresh.lsp)
+            }
+            state = fresh
+        } finally {
+            refreshing = false
+        }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    // Render the last known snapshot instantly; the real check runs in the background and
+    // only swaps the page to the setup/error screens when it confirms a problem.
+    LaunchedEffect(Unit) {
+        RustupStateCache.load(settings)?.let {
+            state = it
+            lspManager.seed(it.lsp)
+        }
+        refresh()
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         ScreenHeader(
@@ -140,15 +168,25 @@ fun DashboardScreen(
             },
         )
 
+        if (refreshing) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
         val motion = MaterialTheme.motionScheme
         AnimatedContent(
             targetState = state,
             transitionSpec = {
                 val fadeSpec = motion.fastSpatialSpec<Float>()
                 val slideSpec = motion.defaultSpatialSpec<IntOffset>()
-                (fadeIn(fadeSpec) + slideInVertically(slideSpec) { it / 12 }).togetherWith(
-                    fadeOut(fadeSpec) + slideOutVertically(slideSpec) { -it / 12 },
-                )
+                if (targetState is RustupState.Ready && initialState is RustupState.Ready) {
+                    // Cached -> fresh refresh: plain cross-fade, no slide, so an open feels
+                    // like an in-place update instead of a page jump.
+                    fadeIn(fadeSpec).togetherWith(fadeOut(fadeSpec))
+                } else {
+                    (fadeIn(fadeSpec) + slideInVertically(slideSpec) { it / 12 }).togetherWith(
+                        fadeOut(fadeSpec) + slideOutVertically(slideSpec) { -it / 12 },
+                    )
+                }
             },
             label = "rustup-state",
         ) { current ->
@@ -331,16 +369,20 @@ private fun ReadyBody(
     onOpenLsp: () -> Unit,
     onOpenVersions: () -> Unit,
 ) {
-    var toolchains by remember { mutableStateOf(state.toolchains) }
-    var components by remember { mutableStateOf(state.components) }
-    var targets by remember { mutableStateOf(state.activeTargets) }
+    // remember(state): the state object is replaced by every background refresh (cached ->
+    // fresh, or a live re-check), and these lists must follow it instead of keeping the
+    // first snapshot forever.
+    var toolchains by remember(state) { mutableStateOf(state.toolchains) }
+    var components by remember(state) { mutableStateOf(state.components) }
+    var targets by remember(state) { mutableStateOf(state.activeTargets) }
     val updateAllOp = remember { mutableStateOf<OpProgress?>(null) }
 
     suspend fun reloadToolchains() { toolchains = rustup.listToolchains() }
     suspend fun reloadComponents() { components = rustup.componentState() }
     suspend fun reloadTargets() { targets = rustup.activeTargets() }
 
-    LaunchedEffect(Unit) { lspManager.refresh() }
+    // LSP state is kept in sync by the dashboard's own refresh (it seeds lspManager from
+    // the fresh Ready snapshot); no separate check needed here.
 
     // Fetching lives here, not inside the card: the card sits in a LazyColumn item that is
     // disposed when scrolled off-screen, so an effect inside it would re-fetch (and blank the
