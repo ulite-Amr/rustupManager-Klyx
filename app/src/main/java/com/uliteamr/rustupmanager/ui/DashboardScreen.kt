@@ -582,14 +582,16 @@ private fun LspVersionsList(lspManager: LspManager, onShowAll: () -> Unit) {
                 if (others!!.isNotEmpty()) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                 }
-                others.take(8).forEach { release ->
+                // Keep the dashboard short: one extra release beyond the pinned pair; the
+                // rest live behind "Show all".
+                others.take(1).forEach { release ->
                     ReleaseVersionRow(
                         lspManager = lspManager,
                         release = release,
                         managed = versionsByTag[release.tag],
                     )
                 }
-                if (others.size > 8) {
+                if (others.size > 1) {
                     OutlinedButton(
                         onClick = onShowAll,
                         modifier = Modifier
