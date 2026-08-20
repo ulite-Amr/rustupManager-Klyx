@@ -69,7 +69,6 @@ class RustupPlugin : KlyxPlugin {
     private val languageServers: LanguageServerRegistry by plugin()
     private val settingsRegistry: PluginSettingsRegistry by plugin()
     private val terminalManager: TerminalManager by plugin()
-    private val tabs: Tabs by plugin()
     private val settings: PluginSettings by runtime()
 
     private val rustup = RustupController()
